@@ -16,6 +16,13 @@ from .boxes import (
 from .config import Config
 from .detection import PersonDetector, voc_to_coco
 from .pose import PersonPose, PoseEstimator, PosePipeline
+from .poseclass import (
+    ARM_STATES,
+    POSTURES,
+    PoseClassification,
+    classify_pose,
+    classify_poses,
+)
 from .presets import PRESETS, Preset
 from .runner import VideoPoseRunner
 from .selection import select_performers
@@ -33,6 +40,11 @@ __all__ = [
     "PoseEstimator",
     "PosePipeline",
     "PersonPose",
+    "PoseClassification",
+    "classify_pose",
+    "classify_poses",
+    "POSTURES",
+    "ARM_STATES",
     "VideoPoseRunner",
     "Preset",
     "PRESETS",
