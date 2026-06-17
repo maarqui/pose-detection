@@ -1,4 +1,4 @@
-# posedet — how it works and how to run it
+# pose-detection: how it works and how to run it
 
 Top-down human **pose & action detection** for jazz-concert images and video, built on
 HuggingFace `transformers` (ViTPose). This document explains the pipeline and shows how
@@ -16,14 +16,14 @@ to run it on **photos** and **videos**.
 image / video frame
    │
    ▼
-PersonDetector        stage 1 — a transformers object detector (RT-DETR by default,
-   │  person boxes              D-FINE optional) finds people. Boxes are converted
-   │  (COCO x,y,w,h)            from VOC (x1,y1,x2,y2) to COCO (x,y,w,h).
+PersonDetector        stage 1: a transformers object detector (RT-DETR by default,
+   │  person boxes             D-FINE optional) finds people. Boxes are converted
+   │  (COCO x,y,w,h)           from VOC (x1,y1,x2,y2) to COCO (x,y,w,h).
    ▼
 select_performers     (optional) bias boxes toward on-stage musicians using geometry:
-   │  refined boxes            stage ROI, foreground-audience suppression, dedupe, cap.
+   │  refined boxes              stage ROI, foreground-audience suppression, dedupe, cap.
    ▼
-PoseEstimator         stage 2 — ViTPose estimates 17 COCO keypoints per person box.
+PoseEstimator         stage 2: ViTPose estimates 17 COCO keypoints per person box.
    │  PersonPose[]             Results cross the API as plain NumPy (PersonPose), never
    ▼                           framework tensors.
 draw_pose             draw skeleton + keypoints (+ optional box) onto the frame.
@@ -38,10 +38,10 @@ downscaling frames for inference then scaling keypoints back to full resolution.
 ankles. Names in `posedet.COCO_KEYPOINTS`; skeleton edges in `posedet.COCO_SKELETON`.
 
 ### Hardware reality
-Development assumes **CPU / integrated graphics — no CUDA**. With the `accurate`
+Development assumes **CPU / integrated graphics - no CUDA**. With the `accurate`
 preset (`vitpose-base`) expect **~1.5 s per frame**. Real-time is a long-term goal,
-**not achievable on this hardware** — it targets the deployment GPU. To trade accuracy
-for speed on CPU use a faster `--preset` (see [§4c](#4c-performance-presets)); the
+**not achievable on this hardware**, it targets the deployment GPU. To trade accuracy
+for speed on CPU use a faster `--preset` (see [Section 4c](#4c-performance-presets)), the
 biggest levers are model size and striding, not resolution.
 
 ---
@@ -54,8 +54,7 @@ pip install -e ".[dev]"
 
 This installs `torch`, `transformers`, `opencv-python`, `pillow`, `numpy` (plus
 `pytest`/`ruff` for dev). Model weights download automatically from HuggingFace on
-first run and are cached locally. **YOLO/ultralytics is intentionally not a
-dependency** (no commercial license).
+first run and are cached locally. 
 
 ---
 
@@ -91,7 +90,7 @@ There are two entry points.
 python run_demo.py --video input/concert.mp4 --out out.mp4 --stride 5
 ```
 
-`--stride N` processes every Nth frame (downsampling for slow CPU runs). Good for a quick look; no smoothing or performer selection.
+`--stride N` processes every Nth frame (downsampling for slow CPU runs). Good for a quick look, no smoothing or performer selection.
 
 ### 4b. `pose_overlay_video.py`: the concert CLI (recommended for video)
 
@@ -102,7 +101,7 @@ python pose_overlay_video.py --input input/concert.mov --output out.mp4
 ```
 
 Faster run with a **performance preset** (recommended for video - see
-[§4c Performance](#4c-performance-presets)):
+[Section 4c](#4c-performance-presets)):
 
 ```bash
 python pose_overlay_video.py --input input/concert.mov --output out.mp4 --preset balanced
@@ -149,7 +148,7 @@ python pose_overlay_video.py --input in.mov --output out.mp4 \
 | `--pose-model`     | ViTPose checkpoint                                | `vitpose-base` |
 | `--device`         | `cpu`, `cuda`, or `` to auto-detect               | auto    |
 
-**Detection & performer selection** (YOLO-free, geometric — needs per-venue tuning)
+**Detection & performer selection**
 
 | Flag                     | Meaning                                                          | Default |
 |--------------------------|------------------------------------------------------------------|---------|
@@ -177,7 +176,7 @@ python pose_overlay_video.py --input in.mov --output out.mp4 \
 | `--draw-boxes` / `--no-draw-boxes` | Draw person bounding boxes           | on      |
 | `--limit-frames`                   | Process at most N frames (`0` = all) | `0`     |
 
-> **Performer selection is YOLO-free.** Telling on-stage musicians apart from the audience is done geometrically with `--stage-roi`, `--audience-suppression`, and `--dedupe-iou`. These default to off and need **per-venue tuning** — start with a stage ROI if the camera framing is stable.
+> Telling on-stage musicians apart from the audience is done geometrically with `--stage-roi`, `--audience-suppression`, and `--dedupe-iou`. These default to off and need **per-venue tuning** - start with a stage ROI if the camera framing is stable.
 
 ### 4c. Performance presets
 
@@ -186,11 +185,11 @@ points on the speed/accuracy curve. Explicit flags override any preset field.
 
 | Preset      | Detector | Pose model | Striding | Quantize | Use it for |
 |-------------|----------|------------|----------|----------|------------|
-| `accurate`  | RT-DETR-r50 | vitpose-base | 1/1 | no | Quality reference; real-time on the deployment **GPU**. The default. |
+| `accurate`  | RT-DETR-r50 | vitpose-base | 1/1 | no | Quality reference, real-time on the deployment **GPU**. The default. |
 | `balanced`  | RT-DETR-r18 | vitpose-plus-small | 2/2 | no | **Recommended.** Best CPU speed/quality trade-off. |
-| `fast`      | RT-DETR-r18 | vitpose-plus-small | 3/3 | int8 | Max CPU throughput; skeleton may jitter / drop joints. |
+| `fast`      | RT-DETR-r18 | vitpose-plus-small | 3/3 | int8 | Max CPU throughput, skeleton may jitter / drop joints. |
 
-> **Reality check (CPU vs GPU).** True live-stream rates (~25 fps)   are **not reachable on this CPU/iGPU** — they are the job of the deployment GPU, where `accurate` runs in real time. On CPU, `fast` roughly 5×'s the `accurate` throughput but is still a preview tool, not live. Also note **`--inference-width` barely affects speed**: both models resize internally (RT-DETR to ~640, ViTPose to 256×192 per person), so input resolution changes only pre/post-processing cost. The real levers are the **model size**, **striding**, and **number of people** (`--max-people`, `--stage-roi`).
+> **Reality check (CPU vs GPU).** True live-stream rates (~25 fps)   are **not reachable on this CPU/iGPU** - they are the job of the deployment GPU, where `accurate` runs in real time. On CPU, `fast` roughly 5×'s the `accurate` throughput but is still a preview tool, not live. Also note **`--inference-width` barely affects speed**: both models resize internally (RT-DETR to ~640, ViTPose to 256×192 per person), so input resolution changes only pre/post-processing cost. The real levers are the **model size**, **striding**, and **number of people** (`--max-people`, `--stage-roi`).
 
 ### 4d. Benchmarking your hardware
 
@@ -281,7 +280,7 @@ writer.release()
 
 ## 6. Tips & troubleshooting
 
-- **Too slow.** Use `--preset balanced` or `--preset fast`, set `--max-people` to a small number, and add a `--stage-roi` to skip the audience. (Lowering `--inference-width` barely helps — see [§4c](#4c-performance-presets).)
+- **Too slow.** Use `--preset balanced` or `--preset fast`, set `--max-people` to a small number, and add a `--stage-roi` to skip the audience. (Lowering `--inference-width` barely helps - see [Section 4c](#4c-performance-presets).)
 - **Skeletons jitter.** Raise `--box-smoothing` toward `0.4 (steadier but laggier on fast camera moves).
 - **Audience members get skeletons.** Set a `--stage-roi`, or add
   `--audience-suppression 0.3`.
