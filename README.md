@@ -33,6 +33,34 @@ For **video**, `VideoPoseRunner` wraps stages 1–2 and adds the temporal concer
 running the models only every N frames (striding), smoothing boxes across frames, and
 downscaling frames for inference then scaling keypoints back to full resolution.
 
+### Beyond skeletons: musician labeling and the auto-shot director
+
+On top of the pose stages, the pipeline can work out *who plays what* and frame a shot
+automatically:
+
+```
+poses + frame
+   │
+   ▼
+classify_pose      posture from joints (standing / sitting + arms raised). Pure geometry.
+   │
+   ▼
+InstrumentDetector OWLv2 (open-vocabulary, text-prompted) finds instrument boxes — any
+   │  instruments      jazz instrument by name, no YOLO.
+   ▼
+label_musicians    tie each instrument to its player by geometry and assign a role
+   │  Musician[]       ("guitar" → "guitarist"), wrapping pose + posture + instrument.
+   ▼
+choose_shot        score performers (a standing soloist with raised arms wins) and
+   │  Shot             return the best crop, grown to the frame's aspect ratio.
+   ▼
+ShotDirector       per-frame loop: runs instruments on a stride and smooths the crop
+                   over time, so the shot pans/zooms instead of snapping.
+```
+
+The chosen shot **keeps the camera's aspect ratio** (never square) and acts as a
+**zoom** into the original resolution — it never distorts the image.
+
 ### Keypoints
 17 COCO keypoints per person: nose, eyes, ears, shoulders, elbows, wrists, hips, knees,
 ankles. Names in `posedet.COCO_KEYPOINTS`; skeleton edges in `posedet.COCO_SKELETON`.
@@ -82,7 +110,8 @@ Useful flags:
 
 ## 4. Running on a video
 
-There are two entry points.
+Three entry points: `run_demo.py` (simplest), `pose_overlay_video.py` (the tunable
+skeleton CLI), and `shot_director_video.py` (automatic shot framing).
 
 ### 4a. `run_demo.py`: simplest video path
 
@@ -199,6 +228,48 @@ points on the speed/accuracy curve. Explicit flags override any preset field.
 python benchmark.py --input input/your_clip.mov --preset all --frames 8 --max-people 8
 ```
 
+### 4e. `shot_director_video.py`: automatic shot framing
+
+Detects musicians, labels them by instrument, scores the best shot, and writes either
+an **overlay** (skeletons + instrument boxes + role/posture labels + the chosen shot
+rectangle) or, with `--zoom`, the **zoom** into that shot at full resolution.
+
+```bash
+python shot_director_video.py --input input/concert.mov --output out.mp4
+```
+
+Output the zoomed crop instead of the overlay, tuned:
+
+```bash
+python shot_director_video.py --input in.mov --output zoom.mp4 --zoom \
+    --preset balanced --instrument-stride 30 --max-zoom 3.0 --shot-smoothing 0.85
+```
+
+> Instrument detection uses **OWLv2** (open-vocabulary, Apache-licensed — no YOLO), so
+> any instrument is found by name. It is heavy on CPU, so it runs on a stride; raise
+> `--instrument-stride` on long clips. The pose stage still honors `--preset`.
+
+#### Options
+
+| Flag                      | Meaning                                                       | Default |
+|---------------------------|---------------------------------------------------------------|---------|
+| `--input` / `--output`    | Input video / output video path                               | `input/concertVideo.mov` / `output/concertVideo_director.mp4` |
+| `--preset`                | Pose-stage speed/accuracy preset                              | `balanced` |
+| `--device`                | `cpu`, `cuda`, or `` to auto-detect                           | auto    |
+| `--instrument-stride`     | Run OWLv2 instrument detection every N frames                 | `15`    |
+| `--instrument-threshold`  | Min confidence to keep an instrument detection                | `0.1`   |
+| `--shot-smoothing`        | EMA crop smoothing in 0..0.95 (higher = steadier camera)      | `0.8`   |
+| `--margin`                | Padding around framed subjects, as a fraction of their size   | `0.15`  |
+| `--max-zoom`              | Max zoom-in; the crop is never smaller than frame/max-zoom    | `2.5`   |
+| `--group-ratio`           | Frame peers with salience >= this fraction of the top one's   | `0.8`   |
+| `--min-association`       | Min geometric score to tie an instrument to a musician        | `0.1`   |
+| `--zoom` / `--no-zoom`    | Output the zoomed crop vs. the annotated overlay              | overlay |
+| `--limit-frames`          | Process at most N frames (`0` = all)                          | `0`     |
+
+> Instruments are detected by text prompt; the default jazz set lives in
+> `posedet.config.DEFAULT_INSTRUMENT_PROMPTS`. Add or remove instruments through
+> `Config.instrument_prompts` (library use) — no code change needed.
+
 ---
 
 ## 5. Using posedet as a library
@@ -260,6 +331,34 @@ for index, frame_bgr, poses in runner.run(iter_video_frames("concert.mp4")):
 writer.release()
 ```
 
+### Auto-shot director
+
+`ShotDirector` runs the whole chain over a frame stream — poses, instruments (on a
+stride), musician labeling, shot scoring — and smooths the crop across frames. Each
+`DirectorFrame` exposes `.musicians`, `.instruments`, and the chosen `.shot`.
+
+```python
+import cv2
+from posedet import Config, ShotDirector, apply_zoom, iter_video_frames
+
+director = ShotDirector(
+    Config(), instrument_stride=15, shot_smoothing=0.85, max_zoom=3.0,
+)
+
+writer = None
+for index, frame_bgr, df in director.run(iter_video_frames("concert.mp4")):
+    zoomed = apply_zoom(frame_bgr, df.shot.box)   # or draw df.musicians/df.shot instead
+    if writer is None:
+        h, w = zoomed.shape[:2]
+        writer = cv2.VideoWriter("out.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 25, (w, h))
+    writer.write(zoomed)
+writer.release()
+```
+
+The pieces are usable on their own too: `classify_pose(pose)` for posture,
+`InstrumentDetector(cfg).detect(image)` for instrument boxes, and
+`label_musicians(poses, instruments)` to tie them together into `Musician`s.
+
 ### Public API surface
 
 `Config`, `PersonDetector`, `PoseEstimator`, `PosePipeline`, `PersonPose`,
@@ -268,6 +367,12 @@ writer.release()
 `dedupe_ranked_boxes`, `smooth_boxes`), and `COCO_SKELETON` / `COCO_KEYPOINTS` /
 `KEYPOINT_COLORS`.
 
+The musician-understanding and auto-shot layer adds: `classify_pose`,
+`classify_poses`, `PoseClassification`, `InstrumentDetector`, `InstrumentDetection`,
+`label_musicians`, `associate_instruments`, `role_for_instrument`, `Musician`,
+`ShotDirector`, `DirectorFrame`, `Shot`, `choose_shot`, `fit_aspect`, `apply_zoom`,
+and the renderers `draw_instruments`, `draw_musician_labels`, `draw_shot`.
+
 ### Choosing models via `Config`
 
 - Default detector: `PekingU/rtdetr_r50vd_coco_o365`. D-FINE
@@ -275,6 +380,9 @@ writer.release()
 - Default pose model: `usyd-community/vitpose-base`. The `vitpose-plus-*` models are
   mixture-of-experts and need a `dataset_index`; `Config.is_moe_pose` detects this and
   `PoseEstimator` supplies it automatically.
+- Default instrument detector: `google/owlv2-base-patch16-ensemble` (open-vocabulary).
+  Set `Config.instrument_prompts` to control which instruments are searched for, and
+  `instrument_threshold` / `max_instruments` to tune precision.
 
 ---
 
@@ -287,6 +395,12 @@ writer.release()
 - **Missing faint joints.** Lower `--keypoint-threshold` (e.g. `0.2`).
 - **No people found.** Lower `--person-threshold`; confirm the detector vocabulary has a `person` class.
 - **`ultralytics`/YOLO.** Not used and not required - by design (licensing).
+- **Auto-shot too slow.** OWLv2 is the cost; raise `--instrument-stride` (instruments
+  barely move between frames) and use a faster `--preset` for the pose stage.
+- **Instrument missed / mislabeled.** Lower `--instrument-threshold`, or add the
+  instrument to `Config.instrument_prompts`. A wrong player match? Tune `--min-association`.
+- **Shot jumps around.** Raise `--shot-smoothing` (toward `0.9`) and/or `--group-ratio`
+  so near-equal performers are framed together instead of cutting between them.
 
 ---
 
@@ -298,4 +412,7 @@ pytest -m "not slow"        # only the fast pure-logic + loop-logic suite
 ruff check . && ruff format .
 ```
 
-The fast suite covers box geometry, performer selection, the video-runner loop (via injected fakes), and drawing - no model weights needed.
+The fast suite covers box geometry, performer selection, the video-runner loop (via
+injected fakes), drawing, pose classification, instrument post-processing,
+instrument↔musician association, shot scoring/framing, and the director loop (via
+injected fakes) - no model weights needed.

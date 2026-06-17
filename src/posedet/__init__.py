@@ -15,6 +15,8 @@ from .boxes import (
 )
 from .config import Config
 from .detection import PersonDetector, voc_to_coco
+from .director import DirectorFrame, ShotDirector
+from .framing import Shot, apply_zoom, choose_shot, fit_aspect
 from .instruments import InstrumentDetection, InstrumentDetector
 from .musicians import (
     Musician,
@@ -38,7 +40,10 @@ from .visualization import (
     COCO_KEYPOINTS,
     COCO_SKELETON,
     KEYPOINT_COLORS,
+    draw_instruments,
+    draw_musician_labels,
     draw_pose,
+    draw_shot,
 )
 
 __all__ = [
@@ -59,9 +64,18 @@ __all__ = [
     "POSTURES",
     "ARM_STATES",
     "VideoPoseRunner",
+    "ShotDirector",
+    "DirectorFrame",
+    "Shot",
+    "choose_shot",
+    "fit_aspect",
+    "apply_zoom",
     "Preset",
     "PRESETS",
     "draw_pose",
+    "draw_instruments",
+    "draw_musician_labels",
+    "draw_shot",
     "iter_video_frames",
     "voc_to_coco",
     "iou_xywh",

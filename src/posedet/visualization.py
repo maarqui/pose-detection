@@ -141,3 +141,63 @@ def draw_pose(
             )
 
     return canvas
+
+
+def _put_label(canvas, text: str, origin, color, *, scale: float = 0.5) -> None:
+    """Draw ``text`` with a filled background pill at ``origin``, in place."""
+    import cv2
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (tw, th), baseline = cv2.getTextSize(text, font, scale, 1)
+    x, y = int(round(origin[0])), int(round(origin[1]))
+    cv2.rectangle(canvas, (x, y - th - baseline), (x + tw, y + baseline), color, -1)
+    cv2.putText(canvas, text, (x, y), font, scale, (0, 0, 0), 1, cv2.LINE_AA)
+
+
+def draw_instruments(
+    image: np.ndarray,
+    instruments,
+    *,
+    color: tuple[int, int, int] = (255, 0, 255),
+    line_thickness: int = 2,
+) -> np.ndarray:
+    """Draw instrument boxes with their labels onto a copy of ``image`` (BGR)."""
+    import cv2
+
+    canvas = image.copy()
+    for instrument in instruments:
+        x, y, w, h = (int(round(v)) for v in instrument.box)
+        cv2.rectangle(canvas, (x, y), (x + w, y + h), color, line_thickness)
+        _put_label(canvas, instrument.label, (x, max(y - 4, 12)), color)
+    return canvas
+
+
+def draw_musician_labels(
+    image: np.ndarray,
+    musicians,
+    *,
+    color: tuple[int, int, int] = (0, 255, 255),
+) -> np.ndarray:
+    """Label each musician with its role and posture above its box (BGR copy)."""
+    canvas = image.copy()
+    for musician in musicians:
+        x, y, _w, _h = (int(round(v)) for v in musician.pose.box)
+        text = f"{musician.role} ({musician.posture.posture})"
+        _put_label(canvas, text, (x, max(y - 4, 12)), color)
+    return canvas
+
+
+def draw_shot(
+    image: np.ndarray,
+    shot,
+    *,
+    color: tuple[int, int, int] = (0, 0, 255),
+    line_thickness: int = 2,
+) -> np.ndarray:
+    """Draw the chosen shot's crop rectangle onto a copy of ``image`` (BGR)."""
+    import cv2
+
+    canvas = image.copy()
+    x, y, w, h = (int(round(v)) for v in shot.box)
+    cv2.rectangle(canvas, (x, y), (x + w, y + h), color, line_thickness)
+    return canvas
