@@ -16,6 +16,12 @@ from .boxes import (
 from .config import Config
 from .detection import PersonDetector, voc_to_coco
 from .instruments import InstrumentDetection, InstrumentDetector
+from .musicians import (
+    Musician,
+    associate_instruments,
+    label_musicians,
+    role_for_instrument,
+)
 from .pose import PersonPose, PoseEstimator, PosePipeline
 from .poseclass import (
     ARM_STATES,
@@ -40,6 +46,10 @@ __all__ = [
     "PersonDetector",
     "InstrumentDetector",
     "InstrumentDetection",
+    "Musician",
+    "label_musicians",
+    "associate_instruments",
+    "role_for_instrument",
     "PoseEstimator",
     "PosePipeline",
     "PersonPose",
