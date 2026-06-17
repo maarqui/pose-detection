@@ -9,6 +9,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Default open-vocabulary text queries for the instrument detector (OWLv2). Bare
+# nouns work well; the set leans toward a jazz ensemble. Override via
+# ``Config.instrument_prompts`` to add/remove instruments without code changes.
+DEFAULT_INSTRUMENT_PROMPTS: tuple[str, ...] = (
+    "saxophone",
+    "trumpet",
+    "trombone",
+    "clarinet",
+    "flute",
+    "piano",
+    "grand piano",
+    "guitar",
+    "electric guitar",
+    "double bass",
+    "cello",
+    "violin",
+    "drum kit",
+    "microphone",
+)
+
 
 def _default_device() -> str:
     """Pick CUDA when present, otherwise CPU. Dev hardware here is CPU-only."""
@@ -49,6 +69,18 @@ class Config:
             IoU. ``0`` (default) trusts the detector's own NMS.
         quantize: Apply int8 dynamic quantization to the models' linear layers. CPU
             only (a no-op on CUDA); roughly 1.5-2x faster for some accuracy loss.
+        instrument_model: HuggingFace id of the open-vocabulary detector used for
+            instruments (OWLv2 by default). Separate from ``detector_model`` (person
+            stage); it is text-queried, so any jazz instrument is detectable without
+            a YOLO-style fixed vocabulary.
+        instrument_prompts: Text queries fed to the instrument detector. See
+            ``DEFAULT_INSTRUMENT_PROMPTS``. The matched prompt becomes the label.
+        instrument_threshold: Min confidence to keep an instrument detection. OWLv2
+            scores run low, so this is smaller than ``det_threshold``.
+        instrument_dedupe_iou: NMS IoU for overlapping instrument boxes; ``<= 0``
+            disables dedupe (boxes are still score-sorted and capped).
+        max_instruments: Cap on instrument detections returned, by descending score.
+            ``0`` means no cap.
 
     The selection knobs are all off by default, so the out-of-the-box detector
     behavior is unchanged; they are the YOLO-free way to bias toward on-stage
@@ -69,6 +101,11 @@ class Config:
     audience_band: float = 0.82
     dedupe_iou: float = 0.0
     quantize: bool = False
+    instrument_model: str = "google/owlv2-base-patch16-ensemble"
+    instrument_prompts: tuple[str, ...] = DEFAULT_INSTRUMENT_PROMPTS
+    instrument_threshold: float = 0.1
+    instrument_dedupe_iou: float = 0.5
+    max_instruments: int = 0
 
     def __post_init__(self) -> None:
         if not self.device:
