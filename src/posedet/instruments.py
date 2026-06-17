@@ -152,9 +152,11 @@ class InstrumentDetector:
         with torch.no_grad():
             outputs = self._model(**inputs)
 
-        # OWLv2 post-processing expects target sizes as (height, width).
+        # OWLv2 post-processing expects target sizes as (height, width). The
+        # Owlv2Processor only exposes the *grounded* variant; it still returns
+        # "labels" as indices into the prompt list, which is what we map below.
         target_sizes = torch.tensor([(image.height, image.width)])
-        results = self._processor.post_process_object_detection(
+        results = self._processor.post_process_grounded_object_detection(
             outputs=outputs,
             target_sizes=target_sizes,
             threshold=self.config.instrument_threshold,

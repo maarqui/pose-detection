@@ -94,7 +94,9 @@ def test_detector_wiring_with_fakes():
         def __call__(self, *, text, images, return_tensors):
             return SimpleNamespace(to=lambda device: {})
 
-        def post_process_object_detection(self, *, outputs, target_sizes, threshold):
+        def post_process_grounded_object_detection(
+            self, *, outputs, target_sizes, threshold
+        ):
             return [
                 {
                     "labels": torch.tensor([0, 1]),
