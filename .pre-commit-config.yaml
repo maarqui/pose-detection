@@ -1,0 +1,10 @@
+# OPTIONAL. Catches lint/format on commits made outside Claude Code too.
+# Enable with: pip install pre-commit && pre-commit install
+# If you don't want a second enforcement layer, delete this file.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format

@@ -1,0 +1,7 @@
+# Runtime dependencies (CPU). For a GPU machine, install the CUDA torch build instead.
+torch
+transformers>=4.48
+accelerate
+pillow
+numpy
+opencv-python

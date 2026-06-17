@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# dev documentation / explanation files not required to run the project.
+# Keep only README.md (the user-facing guide)
+*.md
+!README.md
+
+# Model + media artifacts
+*.mov
+*.mp4
+out*.jpg
+out*.mp4
+
+# Claude config (folder + local instructions)
+.claude/
