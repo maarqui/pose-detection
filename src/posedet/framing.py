@@ -35,6 +35,12 @@ _W_CONFIDENCE = 0.1
 # Person-box area (as a fraction of the frame) at which the size signal saturates.
 _SIZE_SATURATION = 0.15
 
+# Per-extra-performer bonus for a shared ensemble shot. Sized to be competitive
+# with the strongest role close-up bonus (~0.26) so a pair of near-equal
+# performers can win a wide shot; it grows with the group size and is scaled down
+# when the group is uneven (see ``choose_shot``).
+_ENSEMBLE_BONUS_PER_PEER = 0.30
+
 _POSTURE_SCORE = {"standing": 1.0, "sitting": 0.6, "unknown": 0.4}
 _ARMS_SCORE = {"raised": 1.0, "down": 0.4, "unknown": 0.3}
 
@@ -210,10 +216,26 @@ def choose_shot(
 
     # 2. Add ensemble candidates if multiple performers
     if len(indices) > 1:
+        # Bias toward a shared wide shot when several performers are near-equal.
+        # The bonus scales with how many performers qualify (k) and how *even*
+        # their saliences are: a tight cluster of equals should beat any single
+        # role close-up, while a group that only barely clears the cutoff (a
+        # near-soloist among also-rans) leaves the close-up free to win. Spatial
+        # spread is deliberately ignored — far-apart equals still warrant a wide.
+        framed_scores = [scores[i] for i in indices]
+        spread = min(framed_scores) / top_score if top_score > 0 else 1.0
+        # Map the in-group spread [group_ratio, 1] -> evenness [0, 1].
+        evenness = (
+            (spread - group_ratio) / (1.0 - group_ratio)
+            if group_ratio < 1.0
+            else 1.0
+        )
+        evenness = min(max(evenness, 0.0), 1.0)
+        ensemble_bonus = _ENSEMBLE_BONUS_PER_PEER * (len(indices) - 1) * evenness
         candidates.append(
             ShotCandidate(
                 target_box=target,
-                score=top_score + 0.05, # Slight bias towards ensemble if salient
+                score=top_score + ensemble_bonus,
                 musician_indices=indices,
                 shot_type="wide",
                 description="near-equal ensemble",

@@ -166,8 +166,9 @@ class ShotDirector:
         shot = self._smooth_shot(raw_shot)
 
         # Update history every ~1 second (assuming 30fps) to avoid rapid switching
-        # but still encourage variety over time.
-        if self._frame_index % 30 == 0:
+        # but still encourage variety over time. Skip frame 0 so the first shots
+        # are chosen without a variety penalty (keeps early smoothing predictable).
+        if self._frame_index > 0 and self._frame_index % 30 == 0:
             self._shot_history.append(raw_shot.description)
             if len(self._shot_history) > 20:
                 self._shot_history.pop(0)

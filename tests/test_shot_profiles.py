@@ -60,7 +60,7 @@ def test_pianist_prefers_hands_close_up_candidate():
         (700, 560, 620, 180),
     )
 
-    candidates = role_shot_candidates(musician, 0, 0.8)
+    candidates = role_shot_candidates(musician, 0, [musician], 0.8)
     best = max(candidates, key=lambda candidate: candidate.score)
 
     assert best.shot_type == "close_up"
