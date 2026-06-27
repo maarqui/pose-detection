@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .shot_profiles import ShotCandidate, role_shot_candidates
+
 # Salience weights (sum to 1). Arms-raised is weighted high so a soloing gesture
 # pulls the shot toward the soloist; size favours performers closer to camera.
 _W_POSTURE = 0.2
@@ -45,11 +47,15 @@ class Shot:
         box: COCO ``(x, y, w, h)`` crop rectangle, with the *frame's* aspect ratio.
         score: Salience of the framed subject(s); ``0`` for a default full-frame shot.
         musician_indices: Indices (into the input list) of the framed musicians.
+        shot_type: Camera grammar label such as ``medium_close`` or ``wide``.
+        description: Human-readable reason for the shot choice.
     """
 
     box: np.ndarray
     score: float
     musician_indices: tuple[int, ...] = field(default=())
+    shot_type: str = "wide"
+    description: str = "full frame"
 
 
 def score_musician(musician, frame_width: int, frame_height: int) -> float:
@@ -169,11 +175,16 @@ def choose_shot(
     margin: float = 0.15,
     max_zoom: float = 2.5,
     group_ratio: float = 0.8,
+    kpt_threshold: float = 0.3,
 ) -> Shot:
     """Select subjects and return the aspect-correct ``Shot`` to frame them.
 
-    With no musicians, returns a full-frame shot (score ``0``).
+    Role-specific candidates are generated first (hands, mouthpiece, cymbals,
+    upper-body, full-body, etc.) and then fitted to the frame aspect ratio. When
+    several performers are near-equal, an ensemble-wide shot wins so the camera does
+    not twitch between peers. With no musicians, returns a full-frame shot.
     """
+    musicians = list(musicians)
     target, indices, top_score = select_target(
         musicians, frame_width, frame_height, group_ratio=group_ratio
     )
@@ -181,10 +192,51 @@ def choose_shot(
         full = np.array([0.0, 0.0, float(frame_width), float(frame_height)])
         return Shot(box=full, score=0.0, musician_indices=())
 
+    if len(indices) > 1:
+        crop = fit_aspect(
+            target, frame_width, frame_height, margin=margin, max_zoom=max_zoom
+        )
+        return Shot(
+            box=crop,
+            score=top_score,
+            musician_indices=indices,
+            shot_type="wide",
+            description="near-equal ensemble",
+        )
+
+    scores = [score_musician(m, frame_width, frame_height) for m in musicians]
+    candidates: list[ShotCandidate] = []
+    for index, musician in enumerate(musicians):
+        candidates.extend(
+            role_shot_candidates(
+                musician,
+                index,
+                scores[index],
+                kpt_threshold=kpt_threshold,
+            )
+        )
+
+    if not candidates:
+        crop = fit_aspect(
+            target, frame_width, frame_height, margin=margin, max_zoom=max_zoom
+        )
+        return Shot(box=crop, score=top_score, musician_indices=indices)
+
+    best = max(candidates, key=lambda c: c.score)
     crop = fit_aspect(
-        target, frame_width, frame_height, margin=margin, max_zoom=max_zoom
+        best.target_box,
+        frame_width,
+        frame_height,
+        margin=best.margin,
+        max_zoom=best.max_zoom,
     )
-    return Shot(box=crop, score=top_score, musician_indices=indices)
+    return Shot(
+        box=crop,
+        score=best.score,
+        musician_indices=best.musician_indices,
+        shot_type=best.shot_type,
+        description=best.description,
+    )
 
 
 def apply_zoom(frame_bgr: np.ndarray, crop_box) -> np.ndarray:

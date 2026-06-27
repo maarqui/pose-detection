@@ -117,7 +117,11 @@ class ShotDirector:
         ) * np.asarray(shot.box, dtype=float)
         self._shot_box = blended
         return Shot(
-            box=blended, score=shot.score, musician_indices=shot.musician_indices
+            box=blended,
+            score=shot.score,
+            musician_indices=shot.musician_indices,
+            shot_type=shot.shot_type,
+            description=shot.description,
         )
 
     def process(self, frame_bgr: np.ndarray) -> DirectorFrame:
@@ -155,6 +159,7 @@ class ShotDirector:
             margin=self.margin,
             max_zoom=self.max_zoom,
             group_ratio=self.group_ratio,
+            kpt_threshold=self.config.kpt_threshold,
         )
         shot = self._smooth_shot(raw_shot)
 

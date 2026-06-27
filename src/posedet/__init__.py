@@ -35,6 +35,7 @@ from .poseclass import (
 from .presets import PRESETS, Preset
 from .runner import VideoPoseRunner
 from .selection import select_performers
+from .shot_profiles import ShotCandidate, role_shot_candidates
 from .video import iter_video_frames
 from .visualization import (
     COCO_KEYPOINTS,
@@ -67,9 +68,11 @@ __all__ = [
     "ShotDirector",
     "DirectorFrame",
     "Shot",
+    "ShotCandidate",
     "choose_shot",
     "fit_aspect",
     "apply_zoom",
+    "role_shot_candidates",
     "Preset",
     "PRESETS",
     "draw_pose",
