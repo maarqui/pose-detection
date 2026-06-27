@@ -181,12 +181,12 @@ python pose_overlay_video.py --input in.mov --output out.mp4 \
 
 | Flag                     | Meaning                                                          | Default |
 |--------------------------|------------------------------------------------------------------|---------|
-| `--person-threshold`     | Min person-detection score                                       | `0.3`   |
-| `--max-people`           | Cap people per frame (by score); `0` = no cap                    | `0`     |
+| `--person-threshold`     | Min person-detection score                                       | `0.35`  |
+| `--max-people`           | Cap likely performers per frame; `0` = no cap                    | `8`     |
 | `--stage-roi`            | `x1,y1,x2,y2` in 0..1 fractions; drop people centered outside    | off     |
-| `--audience-suppression` | Score penalty for people low in the frame (foreground crowd)     | `0.0`   |
-| `--audience-band`        | Frame-height fraction below which feet mark foreground audience  | `0.82`  |
-| `--dedupe-iou`           | Drop boxes overlapping a higher-ranked one at this IoU; `0` = off| `0.0`   |
+| `--audience-suppression` | Score penalty for people low in the frame (foreground crowd)     | `0.35`  |
+| `--audience-band`        | Frame-height fraction below which feet mark foreground audience  | `0.80`  |
+| `--dedupe-iou`           | Drop boxes overlapping a higher-ranked one at this IoU; `0` = off| `0.45`  |
 
 **Video / performance** (trade accuracy for speed on long clips)
 
@@ -205,7 +205,7 @@ python pose_overlay_video.py --input in.mov --output out.mp4 \
 | `--draw-boxes` / `--no-draw-boxes` | Draw person bounding boxes           | on      |
 | `--limit-frames`                   | Process at most N frames (`0` = all) | `0`     |
 
-> Telling on-stage musicians apart from the audience is done geometrically with `--stage-roi`, `--audience-suppression`, and `--dedupe-iou`. These default to off and need **per-venue tuning** - start with a stage ROI if the camera framing is stable.
+> Telling on-stage musicians apart from the audience is done geometrically with `--stage-roi`, `--audience-suppression`, `--dedupe-iou`, and `--max-people`. The defaults are conservative for real concert footage, but a stable venue should still get a tuned `--stage-roi`.
 
 ### 4c. Performance presets
 
@@ -257,7 +257,18 @@ python shot_director_video.py --input in.mov --output zoom.mp4 --zoom \
 | `--preset`                | Pose-stage speed/accuracy preset                              | `balanced` |
 | `--device`                | `cpu`, `cuda`, or `` to auto-detect                           | auto    |
 | `--instrument-stride`     | Run OWLv2 instrument detection every N frames                 | `15`    |
-| `--instrument-threshold`  | Min confidence to keep an instrument detection                | `0.1`   |
+| `--instrument-threshold`  | Min confidence to keep an instrument detection                | `0.18`  |
+| `--max-instruments`       | Max instrument boxes to keep per detection pass               | `12`    |
+| `--instrument-min-area`   | Drop tiny instrument boxes by frame-area fraction             | `0.0004`|
+| `--instrument-max-area`   | Drop huge instrument boxes by frame-area fraction             | `0.25`  |
+| `--instrument-max-aspect` | Drop very skinny/wide instrument boxes                        | `8.0`   |
+| `--include-microphones`   | Also prompt for microphones; off by default to avoid mic stands| off     |
+| `--person-threshold`      | Min person-detection score                                   | `0.35`  |
+| `--max-people`            | Cap likely performers per frame                              | `8`     |
+| `--stage-roi`             | `x1,y1,x2,y2` in 0..1 fractions; drop people centered outside | off     |
+| `--audience-suppression`  | Score penalty for people low in the frame                    | `0.35`  |
+| `--audience-band`         | Frame-height fraction below which feet mark foreground crowd  | `0.80`  |
+| `--dedupe-iou`            | Drop overlapping person boxes at this IoU                    | `0.45`  |
 | `--shot-smoothing`        | EMA crop smoothing in 0..0.95 (higher = steadier camera)      | `0.8`   |
 | `--margin`                | Padding around framed subjects, as a fraction of their size   | `0.15`  |
 | `--max-zoom`              | Max zoom-in; the crop is never smaller than frame/max-zoom    | `2.5`   |
@@ -271,6 +282,11 @@ python shot_director_video.py --input in.mov --output zoom.mp4 --zoom \
 > `Config.instrument_prompts` (library use) — no code change needed.
 
 ---
+
+> Microphones are intentionally excluded by default because mic stands over-detect in
+> real concert footage; pass `--include-microphones` or add `"microphone"` only when
+> vocals are important. Instrument boxes are also filtered by size/aspect before
+> association, so tiny crowd hits and very skinny stand-like boxes do not drive shots.
 
 ## 5. Using posedet as a library
 

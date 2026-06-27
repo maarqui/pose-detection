@@ -20,6 +20,17 @@ def test_accurate_matches_historical_default():
     assert not p.quantize
 
 
+def test_default_config_is_concert_filtered():
+    cfg = Config()
+    assert cfg.max_people == 8
+    assert cfg.audience_suppression > 0
+    assert cfg.dedupe_iou > 0
+    assert cfg.max_instruments == 12
+    assert "microphone" not in cfg.instrument_prompts
+    assert cfg.instrument_min_area_fraction > 0
+    assert cfg.instrument_max_aspect_ratio > 0
+
+
 def test_to_config_applies_preset_and_overrides():
     p = PRESETS["fast"]
     cfg = p.to_config(max_people=8)

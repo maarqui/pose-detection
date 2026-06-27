@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         help="Inference device: 'cpu', 'cuda', or '' to auto-detect.",
     )
     parser.add_argument(
-        "--person-threshold", type=float, default=0.3, help="Person score threshold."
+        "--person-threshold", type=float, default=0.35, help="Person score threshold."
     )
     parser.add_argument(
         "--keypoint-threshold",
@@ -73,8 +73,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-people",
         type=int,
-        default=0,
-        help="Max people to pose-estimate per frame (by score). 0 means no cap.",
+        default=8,
+        help="Max people to pose-estimate per frame, after audience-aware ranking.",
     )
     parser.add_argument(
         "--stage-roi",
@@ -87,19 +87,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--audience-suppression",
         type=float,
-        default=0.0,
+        default=0.35,
         help="Score penalty for people standing low in the frame (foreground crowd).",
     )
     parser.add_argument(
         "--audience-band",
         type=float,
-        default=0.82,
+        default=0.80,
         help="Frame-height fraction below which feet mark a foreground-audience box.",
     )
     parser.add_argument(
         "--dedupe-iou",
         type=float,
-        default=0.0,
+        default=0.45,
         help="Drop person boxes overlapping a higher-ranked one at this IoU. 0 = off.",
     )
     parser.add_argument(

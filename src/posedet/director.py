@@ -34,7 +34,9 @@ class DirectorFrame:
 
     Attributes:
         musicians: Labeled musicians (pose + posture + instrument + role).
-        instruments: Instruments used this frame (possibly reused from a strided one).
+        instruments: Instruments associated with musicians this frame. Raw detections
+            are still used internally for association, but unassigned boxes are not
+            exposed to the overlay/shot layer.
         shot: The smoothed ``Shot`` to crop to (see ``framing``).
     """
 
@@ -141,6 +143,9 @@ class ShotDirector:
             min_association=self.min_association,
             kpt_threshold=self.config.kpt_threshold,
         )
+        associated_instruments = [
+            musician.instrument for musician in musicians if musician.instrument
+        ]
 
         height, width = frame_bgr.shape[:2]
         raw_shot = choose_shot(
@@ -154,7 +159,9 @@ class ShotDirector:
         shot = self._smooth_shot(raw_shot)
 
         self._frame_index += 1
-        return DirectorFrame(musicians=musicians, instruments=instruments, shot=shot)
+        return DirectorFrame(
+            musicians=musicians, instruments=associated_instruments, shot=shot
+        )
 
     def run(
         self, frames: Iterable[tuple[int, np.ndarray]]
