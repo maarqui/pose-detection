@@ -176,13 +176,14 @@ def choose_shot(
     max_zoom: float = 2.5,
     group_ratio: float = 0.8,
     kpt_threshold: float = 0.3,
+    shot_history: list[str] | None = None,
 ) -> Shot:
     """Select subjects and return the aspect-correct ``Shot`` to frame them.
 
     Role-specific candidates are generated first (hands, mouthpiece, cymbals,
-    upper-body, full-body, etc.) and then fitted to the frame aspect ratio. When
-    several performers are near-equal, an ensemble-wide shot wins so the camera does
-    not twitch between peers. With no musicians, returns a full-frame shot.
+    upper-body, full-body, etc.) and then fitted to the frame aspect ratio.
+    Ensemble-wide shots are also added as candidates. The best candidate is
+    selected, potentially influenced by shot history to encourage variety.
     """
     musicians = list(musicians)
     target, indices, top_score = select_target(
@@ -192,27 +193,32 @@ def choose_shot(
         full = np.array([0.0, 0.0, float(frame_width), float(frame_height)])
         return Shot(box=full, score=0.0, musician_indices=())
 
-    if len(indices) > 1:
-        crop = fit_aspect(
-            target, frame_width, frame_height, margin=margin, max_zoom=max_zoom
-        )
-        return Shot(
-            box=crop,
-            score=top_score,
-            musician_indices=indices,
-            shot_type="wide",
-            description="near-equal ensemble",
-        )
-
     scores = [score_musician(m, frame_width, frame_height) for m in musicians]
     candidates: list[ShotCandidate] = []
+
+    # 1. Add role-specific candidates
     for index, musician in enumerate(musicians):
         candidates.extend(
             role_shot_candidates(
                 musician,
                 index,
+                musicians,
                 scores[index],
                 kpt_threshold=kpt_threshold,
+            )
+        )
+
+    # 2. Add ensemble candidates if multiple performers
+    if len(indices) > 1:
+        candidates.append(
+            ShotCandidate(
+                target_box=target,
+                score=top_score + 0.05, # Slight bias towards ensemble if salient
+                musician_indices=indices,
+                shot_type="wide",
+                description="near-equal ensemble",
+                margin=margin,
+                max_zoom=max_zoom
             )
         )
 
@@ -222,7 +228,29 @@ def choose_shot(
         )
         return Shot(box=crop, score=top_score, musician_indices=indices)
 
-    best = max(candidates, key=lambda c: c.score)
+    # 3. Variety: penalize candidates that match recent shot types too closely
+    def variety_score(c: ShotCandidate) -> float:
+        penalty = 0.0
+        if shot_history:
+            # Penalize the exact same shot description heavily
+            # Looking at a longer history (last 10 entries)
+            last_n = shot_history[-10:]
+
+            # Count exact matches for description
+            desc_matches = last_n.count(c.description)
+            penalty += 0.3 * desc_matches  # Increased penalty from 0.15
+
+            # Count matches for shot type
+            type_matches = last_n.count(c.shot_type)
+            penalty += 0.1 * type_matches  # Increased penalty from 0.05
+
+            # Heavily penalize if the last shot is identical to this one
+            if shot_history[-1] == c.description:
+                penalty += 0.5
+
+        return float(c.score - penalty)
+
+    best = max(candidates, key=variety_score)
     crop = fit_aspect(
         best.target_box,
         frame_width,

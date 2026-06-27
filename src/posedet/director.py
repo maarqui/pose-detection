@@ -106,6 +106,7 @@ class ShotDirector:
         self._frame_index = 0
         self._last_instruments: list = []
         self._shot_box: np.ndarray | None = None
+        self._shot_history: list[str] = []
 
     def _smooth_shot(self, shot: Shot) -> Shot:
         """EMA-blend the new crop box with the previous frame's to damp shot motion."""
@@ -160,8 +161,16 @@ class ShotDirector:
             max_zoom=self.max_zoom,
             group_ratio=self.group_ratio,
             kpt_threshold=self.config.kpt_threshold,
+            shot_history=self._shot_history,
         )
         shot = self._smooth_shot(raw_shot)
+
+        # Update history every ~1 second (assuming 30fps) to avoid rapid switching
+        # but still encourage variety over time.
+        if self._frame_index % 30 == 0:
+            self._shot_history.append(raw_shot.description)
+            if len(self._shot_history) > 20:
+                self._shot_history.pop(0)
 
         self._frame_index += 1
         return DirectorFrame(

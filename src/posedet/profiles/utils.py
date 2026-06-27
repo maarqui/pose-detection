@@ -89,22 +89,73 @@ def head_box(musician, kpt_threshold: float) -> np.ndarray | None:
     return relative_box(musician.pose.box, 0.2, 0.0, 0.6, 0.28)
 
 def hands_box(musician, kpt_threshold: float) -> np.ndarray:
+    """Broad hands area."""
     points = visible_points(
         musician, (_L_ELBOW, _R_ELBOW, _L_WRIST, _R_WRIST), kpt_threshold
     )
-    box = box_from_points(points, pad=0.55)
-    if box is not None:
-        inst = instrument_box(musician)
-        if inst is not None:
-            box = union_box([box, relative_box(inst, 0.15, 0.15, 0.7, 0.7)])
-        return box
+    box = box_from_points(points, pad=0.6)
     inst = instrument_box(musician)
     if inst is not None:
-        return relative_box(inst, 0.15, 0.15, 0.7, 0.7)
-    return relative_box(musician.pose.box, 0.15, 0.35, 0.7, 0.35)
+        # For a close-up, we only want the part of the instrument where the hands are
+        inst_focus = relative_box(inst, 0.2, 0.2, 0.6, 0.6)
+        if box is not None:
+            box = union_box([box, inst_focus])
+        else:
+            box = inst_focus
+
+    if box is not None:
+        return box
+    return relative_box(musician.pose.box, 0.1, 0.3, 0.8, 0.4)
 
 def upper_body_box(musician) -> np.ndarray:
-    return relative_box(musician.pose.box, 0.05, 0.0, 0.9, 0.66)
+    """Waist up (Medium Shot)."""
+    # Slightly wider and lower-centered than a tight chest-up
+    return relative_box(musician.pose.box, -0.1, 0.0, 1.2, 0.65)
+
+def medium_shot_box(musician) -> np.ndarray:
+    """Knees up (Medium Wide)."""
+    return relative_box(musician.pose.box, -0.1, 0.0, 1.2, 0.8)
+
+def chest_up_box(musician) -> np.ndarray:
+    """Chest up (Medium Close-up)."""
+    return relative_box(musician.pose.box, 0.0, 0.0, 1.0, 0.45)
+
+def head_only_box(musician, kpt_threshold: float) -> np.ndarray:
+    """Head only."""
+    points = visible_points(
+        musician, (_NOSE, _L_EYE, _R_EYE, _L_EAR, _R_EAR), kpt_threshold
+    )
+    box = box_from_points(points, pad=0.5)
+    if box is not None:
+        return box
+    return relative_box(musician.pose.box, 0.3, 0.0, 0.4, 0.2)
+
+def pianist_hands_focused_box(musician, kpt_threshold: float) -> np.ndarray:
+    """Focused on pianist hands and keys."""
+    points = visible_points(musician, (_L_WRIST, _R_WRIST), kpt_threshold)
+    px, py, pw, ph = (float(v) for v in musician.pose.box)
+
+    if points:
+        # If wrists are found, we want a wide but short box for the keyboard
+        arr = np.asarray(points)
+        x1, y1 = arr[:, 0].min(), arr[:, 1].min()
+        x2, y2 = arr[:, 0].max(), arr[:, 1].max()
+
+        # Detected width of hands
+        dw = x2 - x1
+        dh = y2 - y1
+
+        # Target width: at least 80% of person width to see keys,
+        # but expanded if hands are far apart.
+        target_w = max(dw + pw * 0.4, pw * 0.9)
+        # Target height: enough to see hands and keys
+        target_h = max(dh + ph * 0.1, ph * 0.2)
+
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        return np.array([cx - target_w * 0.5, cy - target_h * 0.5, target_w, target_h], dtype=float)
+
+    # Fallback to a region where hands usually are for a pianist
+    return relative_box(musician.pose.box, -0.1, 0.4, 1.2, 0.3)
 
 def full_body_box(musician) -> np.ndarray:
     return np.asarray(musician.pose.box, dtype=float)

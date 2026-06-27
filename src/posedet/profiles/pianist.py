@@ -1,6 +1,9 @@
 from .utils import (
     hands_box,
+    pianist_hands_focused_box,
     upper_body_box,
+    chest_up_box,
+    head_only_box,
     full_body_box,
     candidate,
     ShotCandidate
@@ -9,17 +12,18 @@ from .utils import (
 def pianist_shots(
     musician,
     musician_index: int,
+    musicians: list,
     salience: float,
     solo_bonus: float,
     kpt_threshold: float,
 ) -> list[ShotCandidate]:
     candidates = []
 
-    # Close up: hands
+    # Close up: hands (broad)
     candidates.append(
         candidate(
             hands_box(musician, kpt_threshold),
-            salience + 0.25 + solo_bonus,
+            salience + 0.24 + solo_bonus,
             musician_index,
             "close_up",
             "pianist hands",
@@ -28,11 +32,37 @@ def pianist_shots(
         )
     )
 
+    # Close up: hands focused (tight on keys)
+    candidates.append(
+        candidate(
+            pianist_hands_focused_box(musician, kpt_threshold),
+            salience + 0.26 + solo_bonus,
+            musician_index,
+            "close_up",
+            "pianist hands focused",
+            margin=0.12,
+            max_zoom=4.5,
+        )
+    )
+
+    # Medium close-up: chest up
+    candidates.append(
+        candidate(
+            chest_up_box(musician),
+            salience + 0.22 + solo_bonus,
+            musician_index,
+            "medium_close",
+            "pianist chest up",
+            margin=0.15,
+            max_zoom=3.2,
+        )
+    )
+
     # Medium shot: from waist up
     candidates.append(
         candidate(
             upper_body_box(musician),
-            salience + 0.15 + solo_bonus,
+            salience + 0.20 + solo_bonus,
             musician_index,
             "medium",
             "pianist waist up",
@@ -41,7 +71,20 @@ def pianist_shots(
         )
     )
 
-    # Extreme wide shot: full body (centered at pianist)
+    # Close up: head only
+    candidates.append(
+        candidate(
+            head_only_box(musician, kpt_threshold),
+            salience + 0.15 + solo_bonus,
+            musician_index,
+            "close_up",
+            "pianist headshot",
+            margin=0.25,
+            max_zoom=3.5
+        )
+    )
+
+    # Extreme wide shot: full body
     candidates.append(
         candidate(
             full_body_box(musician),

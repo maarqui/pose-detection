@@ -1,6 +1,8 @@
 from .utils import (
     hands_box,
     upper_body_box,
+    chest_up_box,
+    head_only_box,
     full_body_box,
     relative_box,
     instrument_box,
@@ -11,6 +13,7 @@ from .utils import (
 def drummer_shots(
     musician,
     musician_index: int,
+    musicians: list,
     salience: float,
     solo_bonus: float,
     kpt_threshold: float,
@@ -25,7 +28,7 @@ def drummer_shots(
     candidates.append(
         candidate(
             relative_box(kit, 0.1, 0.0, 0.8, 0.5),
-            salience + 0.22 + solo_bonus,
+            salience + 0.24 + solo_bonus,
             musician_index,
             "close_up",
             "cymbals toms hat",
@@ -38,7 +41,7 @@ def drummer_shots(
     candidates.append(
         candidate(
             hands_box(musician, kpt_threshold),
-            salience + 0.20 + solo_bonus,
+            salience + 0.22 + solo_bonus,
             musician_index,
             "medium_close",
             "drummer hands area",
@@ -47,11 +50,24 @@ def drummer_shots(
         )
     )
 
+    # medium close up: chest up
+    candidates.append(
+        candidate(
+            chest_up_box(musician),
+            salience + 0.20 + solo_bonus,
+            musician_index,
+            "medium_close",
+            "drummer chest up",
+            margin=0.15,
+            max_zoom=3.0,
+        )
+    )
+
     # medium shot from waist up
     candidates.append(
         candidate(
             upper_body_box(musician),
-            salience + 0.14 + solo_bonus,
+            salience + 0.18 + solo_bonus,
             musician_index,
             "medium",
             "drummer waist up",
@@ -60,7 +76,20 @@ def drummer_shots(
         )
     )
 
-    # Extreme wide shot full body (centered at drummer)
+    # close up: head only
+    candidates.append(
+        candidate(
+            head_only_box(musician, kpt_threshold),
+            salience + 0.12 + solo_bonus,
+            musician_index,
+            "close_up",
+            "drummer headshot",
+            margin=0.25,
+            max_zoom=3.5
+        )
+    )
+
+    # Extreme wide shot full body
     candidates.append(
         candidate(
             full_body_box(musician),
