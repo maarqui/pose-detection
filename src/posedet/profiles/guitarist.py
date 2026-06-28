@@ -1,14 +1,14 @@
 from .utils import (
-    hands_box,
-    upper_body_box,
+    ShotCandidate,
+    candidate,
     chest_up_box,
+    hands_box,
     head_only_box,
-    relative_box,
     instrument_union,
     union_box,
-    candidate,
-    ShotCandidate
+    upper_body_box,
 )
+
 
 def guitarist_shots(
     musician,
@@ -68,7 +68,7 @@ def guitarist_shots(
             "close_up",
             "guitarist headshot",
             margin=0.25,
-            max_zoom=3.5
+            max_zoom=3.5,
         )
     )
 
@@ -79,6 +79,7 @@ def guitarist_shots(
 
         # Check if "other" is a soloist (arms raised)
         from ..poseclass import ARMS_RAISED
+
         if other.posture.arms == ARMS_RAISED:
             g_center = musician.pose.box[0] + musician.pose.box[2] * 0.5
             o_center = other.pose.box[0] + other.pose.box[2] * 0.5
@@ -94,7 +95,7 @@ def guitarist_shots(
                         shot_type="wide",
                         description=f"guitarist with nearby soloist ({other.role})",
                         margin=0.20,
-                        max_zoom=2.0
+                        max_zoom=2.0,
                     )
                 )
 

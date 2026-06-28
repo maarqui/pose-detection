@@ -226,9 +226,7 @@ def choose_shot(
         spread = min(framed_scores) / top_score if top_score > 0 else 1.0
         # Map the in-group spread [group_ratio, 1] -> evenness [0, 1].
         evenness = (
-            (spread - group_ratio) / (1.0 - group_ratio)
-            if group_ratio < 1.0
-            else 1.0
+            (spread - group_ratio) / (1.0 - group_ratio) if group_ratio < 1.0 else 1.0
         )
         evenness = min(max(evenness, 0.0), 1.0)
         ensemble_bonus = _ENSEMBLE_BONUS_PER_PEER * (len(indices) - 1) * evenness
@@ -240,7 +238,7 @@ def choose_shot(
                 shot_type="wide",
                 description="near-equal ensemble",
                 margin=margin,
-                max_zoom=max_zoom
+                max_zoom=max_zoom,
             )
         )
 

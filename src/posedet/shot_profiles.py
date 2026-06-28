@@ -10,24 +10,23 @@ Refactored to use musician-specific profile modules.
 
 from __future__ import annotations
 
-import numpy as np
-
 from .poseclass import ARMS_RAISED
 from .profiles import (
-    pianist_shots,
-    drummer_shots,
-    horn_shots,
     bassist_shots,
+    drummer_shots,
     guitarist_shots,
+    horn_shots,
+    pianist_shots,
 )
 from .profiles.utils import (
     ShotCandidate,
-    upper_body_box,
-    full_body_box,
     candidate,
+    full_body_box,
+    upper_body_box,
 )
 
 HORN_ROLES = {"saxophonist", "trumpeter", "trombonist", "clarinetist", "flutist"}
+
 
 def role_shot_candidates(
     musician,
@@ -42,19 +41,35 @@ def role_shot_candidates(
     solo_bonus = 0.12 if musician.posture.arms == ARMS_RAISED else 0.0
 
     if role == "pianist":
-        return pianist_shots(musician, musician_index, musicians, salience, solo_bonus, kpt_threshold)
+        return pianist_shots(
+            musician, musician_index, musicians, salience, solo_bonus, kpt_threshold
+        )
 
     if role == "drummer":
-        return drummer_shots(musician, musician_index, musicians, salience, solo_bonus, kpt_threshold)
+        return drummer_shots(
+            musician, musician_index, musicians, salience, solo_bonus, kpt_threshold
+        )
 
     if role in HORN_ROLES:
-        return horn_shots(musician, musician_index, musicians, salience, solo_bonus, kpt_threshold, role)
+        return horn_shots(
+            musician,
+            musician_index,
+            musicians,
+            salience,
+            solo_bonus,
+            kpt_threshold,
+            role,
+        )
 
     if role == "bassist":
-        return bassist_shots(musician, musician_index, musicians, salience, solo_bonus, kpt_threshold)
+        return bassist_shots(
+            musician, musician_index, musicians, salience, solo_bonus, kpt_threshold
+        )
 
     if role == "guitarist":
-        return guitarist_shots(musician, musician_index, musicians, salience, solo_bonus, kpt_threshold)
+        return guitarist_shots(
+            musician, musician_index, musicians, salience, solo_bonus, kpt_threshold
+        )
 
     # Fallback for unknown roles
     candidates: list[ShotCandidate] = []
