@@ -49,6 +49,10 @@ def build_instrument_detections(
     threshold: float = 0.0,
     dedupe_iou: float = 0.5,
     max_instruments: int = 0,
+    image_size: tuple[int, int] | None = None,
+    min_area_fraction: float = 0.0,
+    max_area_fraction: float = 0.0,
+    max_aspect_ratio: float = 0.0,
 ) -> list[InstrumentDetection]:
     """Turn raw detector output into ranked, de-duplicated ``InstrumentDetection``s.
 
@@ -63,6 +67,13 @@ def build_instrument_detections(
         dedupe_iou: NMS IoU for overlapping boxes; ``<= 0`` keeps all (still ranked
             and capped).
         max_instruments: Keep at most this many, by descending score; ``0`` = no cap.
+        image_size: Optional ``(width, height)`` for size-based filtering.
+        min_area_fraction: Drop boxes smaller than this fraction of the image area.
+            ``0`` disables the lower area bound.
+        max_area_fraction: Drop boxes larger than this fraction of the image area.
+            ``0`` disables the upper area bound.
+        max_aspect_ratio: Drop boxes with width/height or height/width above this
+            ratio. ``0`` disables shape filtering.
 
     Returns:
         ``InstrumentDetection``s in descending score order, boxes in COCO format.
@@ -79,6 +90,35 @@ def build_instrument_detections(
         return []
 
     boxes_coco = voc_to_coco(boxes_voc)
+
+    if image_size is not None and (
+        min_area_fraction > 0.0 or max_area_fraction > 0.0 or max_aspect_ratio > 0.0
+    ):
+        image_width, image_height = image_size
+        image_area = max(float(image_width) * float(image_height), 1.0)
+        widths = np.maximum(boxes_coco[:, 2], 0.0)
+        heights = np.maximum(boxes_coco[:, 3], 0.0)
+        areas = widths * heights / image_area
+        valid_shape = np.ones(len(boxes_coco), dtype=bool)
+        if min_area_fraction > 0.0:
+            valid_shape &= areas >= min_area_fraction
+        if max_area_fraction > 0.0:
+            valid_shape &= areas <= max_area_fraction
+        if max_aspect_ratio > 0.0:
+            safe_widths = np.maximum(widths, 1.0)
+            safe_heights = np.maximum(heights, 1.0)
+            aspect_ratios = np.maximum(
+                safe_widths / safe_heights, safe_heights / safe_widths
+            )
+            valid_shape &= aspect_ratios <= max_aspect_ratio
+
+        labels, scores, boxes_coco = (
+            labels[valid_shape],
+            scores[valid_shape],
+            boxes_coco[valid_shape],
+        )
+        if labels.shape[0] == 0:
+            return []
     cap = (
         max_instruments if max_instruments and max_instruments > 0 else len(boxes_coco)
     )
@@ -170,4 +210,8 @@ class InstrumentDetector:
             threshold=self.config.instrument_threshold,
             dedupe_iou=self.config.instrument_dedupe_iou,
             max_instruments=self.config.max_instruments,
+            image_size=(image.width, image.height),
+            min_area_fraction=self.config.instrument_min_area_fraction,
+            max_area_fraction=self.config.instrument_max_area_fraction,
+            max_aspect_ratio=self.config.instrument_max_aspect_ratio,
         )

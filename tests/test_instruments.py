@@ -77,6 +77,42 @@ def test_max_instruments_caps_by_score():
     assert [d.label for d in dets] == ["saxophone", "drum kit"]
 
 
+def test_size_filter_drops_tiny_background_hits():
+    labels = [0, 1]
+    scores = [0.9, 0.8]
+    boxes_voc = [
+        [0, 0, 5, 5],  # too tiny in a 1000x1000 frame
+        [100, 100, 180, 180],
+    ]
+    dets = build_instrument_detections(
+        PROMPTS,
+        labels,
+        scores,
+        boxes_voc,
+        image_size=(1000, 1000),
+        min_area_fraction=0.001,
+    )
+    assert [d.label for d in dets] == ["saxophone"]
+
+
+def test_aspect_filter_drops_skinny_microphone_stand_like_boxes():
+    labels = [0, 1]
+    scores = [0.9, 0.8]
+    boxes_voc = [
+        [20, 20, 24, 220],  # aspect ratio 50:1
+        [100, 100, 180, 180],
+    ]
+    dets = build_instrument_detections(
+        PROMPTS,
+        labels,
+        scores,
+        boxes_voc,
+        image_size=(1000, 1000),
+        max_aspect_ratio=8.0,
+    )
+    assert [d.label for d in dets] == ["saxophone"]
+
+
 def test_empty_input_returns_empty():
     assert build_instrument_detections(PROMPTS, [], [], np.empty((0, 4))) == []
 

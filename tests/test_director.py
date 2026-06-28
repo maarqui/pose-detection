@@ -82,6 +82,22 @@ def test_process_returns_labeled_musicians_and_shot():
     np.testing.assert_allclose(result.shot.box, expected.box)
 
 
+def test_unassociated_instruments_are_not_exposed_for_overlay():
+    pose = _pose((800, 300, 300, 500))
+    near = InstrumentDetection("guitar", 0.8, np.array([820.0, 600.0, 200.0, 200.0]))
+    far = InstrumentDetection("saxophone", 0.9, np.array([20.0, 20.0, 40.0, 40.0]))
+    director = ShotDirector(
+        runner=FakeRunner([[pose]]),
+        instrument_detector=FakeInstrumentDetector([near, far]),
+        shot_smoothing=0.0,
+    )
+
+    result = director.process(_frame())
+
+    assert result.instruments == [near]
+    assert result.musicians[0].instrument is near
+
+
 def test_shot_smoothing_blends_with_previous_frame():
     runner = FakeRunner([[_pose((100, 100, 200, 400))], [_pose((1500, 400, 300, 500))]])
     director = ShotDirector(

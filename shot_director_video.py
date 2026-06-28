@@ -33,6 +33,7 @@ from posedet import (
     draw_pose,
     draw_shot,
 )
+from posedet.config import DEFAULT_INSTRUMENT_PROMPTS
 from posedet.visualization import KEYPOINT_COLORS
 
 
@@ -66,8 +67,81 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--instrument-threshold",
         type=float,
-        default=0.1,
+        default=0.18,
         help="Min confidence to keep an instrument detection.",
+    )
+    parser.add_argument(
+        "--max-instruments",
+        type=int,
+        default=12,
+        help="Max instrument boxes to keep per detection pass. 0 means no cap.",
+    )
+    parser.add_argument(
+        "--instrument-min-area",
+        type=float,
+        default=0.0004,
+        help="Drop instrument boxes smaller than this frame-area fraction. 0 disables.",
+    )
+    parser.add_argument(
+        "--instrument-max-area",
+        type=float,
+        default=0.25,
+        help="Drop instrument boxes larger than this frame-area fraction. 0 disables.",
+    )
+    parser.add_argument(
+        "--instrument-max-aspect",
+        type=float,
+        default=8.0,
+        help="Drop very skinny/wide instrument boxes. 0 disables.",
+    )
+    parser.add_argument(
+        "--include-microphones",
+        action="store_true",
+        help=(
+            "Also prompt for microphones. Off by default because mic stands "
+            "over-detect."
+        ),
+    )
+    parser.add_argument(
+        "--person-threshold", type=float, default=0.35, help="Person score threshold."
+    )
+    parser.add_argument(
+        "--keypoint-threshold",
+        type=float,
+        default=0.3,
+        help="Keypoint score threshold for labeling and overlays.",
+    )
+    parser.add_argument(
+        "--max-people",
+        type=int,
+        default=8,
+        help="Max people to pose-estimate per frame, after audience-aware ranking.",
+    )
+    parser.add_argument(
+        "--stage-roi",
+        default="",
+        help=(
+            "Performance area as x1,y1,x2,y2 in 0..1 fractions of the frame. People "
+            "centered outside are dropped. Empty disables."
+        ),
+    )
+    parser.add_argument(
+        "--audience-suppression",
+        type=float,
+        default=0.35,
+        help="Score penalty for people standing low in the frame.",
+    )
+    parser.add_argument(
+        "--audience-band",
+        type=float,
+        default=0.80,
+        help="Frame-height fraction below which feet mark a foreground-audience box.",
+    )
+    parser.add_argument(
+        "--dedupe-iou",
+        type=float,
+        default=0.45,
+        help="Drop person boxes overlapping a higher-ranked one at this IoU. 0 = off.",
     )
     parser.add_argument(
         "--shot-smoothing",
@@ -114,6 +188,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def parse_roi(value: str) -> tuple[float, float, float, float] | None:
+    """Parse a ``x1,y1,x2,y2`` fraction string into a tuple, or ``None`` if empty."""
+    value = value.strip()
+    if not value:
+        return None
+    parts = tuple(float(part.strip()) for part in value.split(","))
+    if len(parts) != 4:
+        raise ValueError(f"--stage-roi needs four comma-separated values, got: {value}")
+    x1, y1, x2, y2 = parts
+    if not (0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0):
+        raise ValueError(
+            "--stage-roi must be normalized x1,y1,x2,y2 with "
+            f"0<=x1<x2<=1 and 0<=y1<y2<=1, got: {value}"
+        )
+    return parts
+
+
 def format_duration(seconds: float) -> str:
     whole_seconds = int(round(seconds))
     hours, remainder = divmod(whole_seconds, 3600)
@@ -132,7 +223,7 @@ def render(frame_bgr, director_frame, args):
     annotated = draw_pose(
         frame_bgr,
         [m.pose for m in director_frame.musicians],
-        kpt_threshold=args.instrument_threshold,
+        kpt_threshold=args.keypoint_threshold,
         draw_boxes=False,
         skeleton_color=(60, 255, 60),
         point_colors=KEYPOINT_COLORS,
@@ -154,11 +245,26 @@ def main() -> None:
         raise ValueError("--limit-frames must be >= 0")
 
     preset = PRESETS[args.preset]
+    instrument_prompts = DEFAULT_INSTRUMENT_PROMPTS
+    if args.include_microphones:
+        instrument_prompts = (*instrument_prompts, "microphone")
     config = Config(
         detector_model=preset.detector_model,
         pose_model=preset.pose_model,
         device=args.device,
+        det_threshold=args.person_threshold,
+        kpt_threshold=args.keypoint_threshold,
+        max_people=args.max_people,
+        stage_roi=parse_roi(args.stage_roi),
+        audience_suppression=args.audience_suppression,
+        audience_band=args.audience_band,
+        dedupe_iou=args.dedupe_iou,
+        instrument_prompts=instrument_prompts,
         instrument_threshold=args.instrument_threshold,
+        max_instruments=args.max_instruments,
+        instrument_min_area_fraction=args.instrument_min_area,
+        instrument_max_area_fraction=args.instrument_max_area,
+        instrument_max_aspect_ratio=args.instrument_max_aspect,
         quantize=preset.quantize,
     )
     runner = VideoPoseRunner(

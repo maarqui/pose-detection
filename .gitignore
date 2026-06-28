@@ -22,3 +22,10 @@ out*.mp4
 
 # Claude config (folder + local instructions)
 .claude/
+
+# Inputs/outputs
+input/
+output/
+
+#.idea (opened in android studio by mistake)
+.idea/

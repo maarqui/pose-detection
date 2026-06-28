@@ -26,7 +26,6 @@ DEFAULT_INSTRUMENT_PROMPTS: tuple[str, ...] = (
     "cello",
     "violin",
     "drum kit",
-    "microphone",
 )
 
 
@@ -81,31 +80,41 @@ class Config:
             disables dedupe (boxes are still score-sorted and capped).
         max_instruments: Cap on instrument detections returned, by descending score.
             ``0`` means no cap.
+        instrument_min_area_fraction: Drop instrument boxes smaller than this
+            fraction of the frame. This rejects tiny background/crowd hits.
+        instrument_max_area_fraction: Drop instrument boxes larger than this
+            fraction of the frame. This rejects implausibly broad stage/background
+            regions.
+        instrument_max_aspect_ratio: Drop very skinny/wide boxes, which are common
+            false positives for microphone stands and cables.
 
-    The selection knobs are all off by default, so the out-of-the-box detector
-    behavior is unchanged; they are the YOLO-free way to bias toward on-stage
-    performers and need per-venue tuning. See ``posedet.presets`` for ready-made
-    speed/accuracy configurations.
+    Defaults are tuned for a real concert feed: keep a small set of likely stage
+    performers, demote foreground audience, and keep only plausible instrument boxes.
+    Set caps/filters to ``0`` or restore lower thresholds for exploratory debugging.
+    See ``posedet.presets`` for ready-made speed/accuracy configurations.
     """
 
     detector_model: str = "PekingU/rtdetr_r50vd_coco_o365"
     pose_model: str = "usyd-community/vitpose-base"
     device: str = ""  # empty -> auto-detect in __post_init__
-    det_threshold: float = 0.3
+    det_threshold: float = 0.35
     kpt_threshold: float = 0.3
     person_label: int = 0
     person_label_name: str = "person"
-    max_people: int = 0
+    max_people: int = 8
     stage_roi: tuple[float, float, float, float] | None = None
-    audience_suppression: float = 0.0
-    audience_band: float = 0.82
-    dedupe_iou: float = 0.0
+    audience_suppression: float = 0.35
+    audience_band: float = 0.80
+    dedupe_iou: float = 0.45
     quantize: bool = False
     instrument_model: str = "google/owlv2-base-patch16-ensemble"
     instrument_prompts: tuple[str, ...] = DEFAULT_INSTRUMENT_PROMPTS
-    instrument_threshold: float = 0.1
-    instrument_dedupe_iou: float = 0.5
-    max_instruments: int = 0
+    instrument_threshold: float = 0.18
+    instrument_dedupe_iou: float = 0.4
+    max_instruments: int = 12
+    instrument_min_area_fraction: float = 0.0004
+    instrument_max_area_fraction: float = 0.25
+    instrument_max_aspect_ratio: float = 8.0
 
     def __post_init__(self) -> None:
         if not self.device:

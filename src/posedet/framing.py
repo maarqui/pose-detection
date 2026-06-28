@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .shot_profiles import ShotCandidate, role_shot_candidates
+
 # Salience weights (sum to 1). Arms-raised is weighted high so a soloing gesture
 # pulls the shot toward the soloist; size favours performers closer to camera.
 _W_POSTURE = 0.2
@@ -32,6 +34,12 @@ _W_CONFIDENCE = 0.1
 
 # Person-box area (as a fraction of the frame) at which the size signal saturates.
 _SIZE_SATURATION = 0.15
+
+# Per-extra-performer bonus for a shared ensemble shot. Sized to be competitive
+# with the strongest role close-up bonus (~0.26) so a pair of near-equal
+# performers can win a wide shot; it grows with the group size and is scaled down
+# when the group is uneven (see ``choose_shot``).
+_ENSEMBLE_BONUS_PER_PEER = 0.30
 
 _POSTURE_SCORE = {"standing": 1.0, "sitting": 0.6, "unknown": 0.4}
 _ARMS_SCORE = {"raised": 1.0, "down": 0.4, "unknown": 0.3}
@@ -45,11 +53,15 @@ class Shot:
         box: COCO ``(x, y, w, h)`` crop rectangle, with the *frame's* aspect ratio.
         score: Salience of the framed subject(s); ``0`` for a default full-frame shot.
         musician_indices: Indices (into the input list) of the framed musicians.
+        shot_type: Camera grammar label such as ``medium_close`` or ``wide``.
+        description: Human-readable reason for the shot choice.
     """
 
     box: np.ndarray
     score: float
     musician_indices: tuple[int, ...] = field(default=())
+    shot_type: str = "wide"
+    description: str = "full frame"
 
 
 def score_musician(musician, frame_width: int, frame_height: int) -> float:
@@ -169,11 +181,17 @@ def choose_shot(
     margin: float = 0.15,
     max_zoom: float = 2.5,
     group_ratio: float = 0.8,
+    kpt_threshold: float = 0.3,
+    shot_history: list[str] | None = None,
 ) -> Shot:
     """Select subjects and return the aspect-correct ``Shot`` to frame them.
 
-    With no musicians, returns a full-frame shot (score ``0``).
+    Role-specific candidates are generated first (hands, mouthpiece, cymbals,
+    upper-body, full-body, etc.) and then fitted to the frame aspect ratio.
+    Ensemble-wide shots are also added as candidates. The best candidate is
+    selected, potentially influenced by shot history to encourage variety.
     """
+    musicians = list(musicians)
     target, indices, top_score = select_target(
         musicians, frame_width, frame_height, group_ratio=group_ratio
     )
@@ -181,10 +199,94 @@ def choose_shot(
         full = np.array([0.0, 0.0, float(frame_width), float(frame_height)])
         return Shot(box=full, score=0.0, musician_indices=())
 
+    scores = [score_musician(m, frame_width, frame_height) for m in musicians]
+    candidates: list[ShotCandidate] = []
+
+    # 1. Add role-specific candidates
+    for index, musician in enumerate(musicians):
+        candidates.extend(
+            role_shot_candidates(
+                musician,
+                index,
+                musicians,
+                scores[index],
+                kpt_threshold=kpt_threshold,
+            )
+        )
+
+    # 2. Add ensemble candidates if multiple performers
+    if len(indices) > 1:
+        # Bias toward a shared wide shot when several performers are near-equal.
+        # The bonus scales with how many performers qualify (k) and how *even*
+        # their saliences are: a tight cluster of equals should beat any single
+        # role close-up, while a group that only barely clears the cutoff (a
+        # near-soloist among also-rans) leaves the close-up free to win. Spatial
+        # spread is deliberately ignored — far-apart equals still warrant a wide.
+        framed_scores = [scores[i] for i in indices]
+        spread = min(framed_scores) / top_score if top_score > 0 else 1.0
+        # Map the in-group spread [group_ratio, 1] -> evenness [0, 1].
+        evenness = (
+            (spread - group_ratio) / (1.0 - group_ratio)
+            if group_ratio < 1.0
+            else 1.0
+        )
+        evenness = min(max(evenness, 0.0), 1.0)
+        ensemble_bonus = _ENSEMBLE_BONUS_PER_PEER * (len(indices) - 1) * evenness
+        candidates.append(
+            ShotCandidate(
+                target_box=target,
+                score=top_score + ensemble_bonus,
+                musician_indices=indices,
+                shot_type="wide",
+                description="near-equal ensemble",
+                margin=margin,
+                max_zoom=max_zoom
+            )
+        )
+
+    if not candidates:
+        crop = fit_aspect(
+            target, frame_width, frame_height, margin=margin, max_zoom=max_zoom
+        )
+        return Shot(box=crop, score=top_score, musician_indices=indices)
+
+    # 3. Variety: penalize candidates that match recent shot types too closely
+    def variety_score(c: ShotCandidate) -> float:
+        penalty = 0.0
+        if shot_history:
+            # Penalize the exact same shot description heavily
+            # Looking at a longer history (last 10 entries)
+            last_n = shot_history[-10:]
+
+            # Count exact matches for description
+            desc_matches = last_n.count(c.description)
+            penalty += 0.3 * desc_matches  # Increased penalty from 0.15
+
+            # Count matches for shot type
+            type_matches = last_n.count(c.shot_type)
+            penalty += 0.1 * type_matches  # Increased penalty from 0.05
+
+            # Heavily penalize if the last shot is identical to this one
+            if shot_history[-1] == c.description:
+                penalty += 0.5
+
+        return float(c.score - penalty)
+
+    best = max(candidates, key=variety_score)
     crop = fit_aspect(
-        target, frame_width, frame_height, margin=margin, max_zoom=max_zoom
+        best.target_box,
+        frame_width,
+        frame_height,
+        margin=best.margin,
+        max_zoom=best.max_zoom,
     )
-    return Shot(box=crop, score=top_score, musician_indices=indices)
+    return Shot(
+        box=crop,
+        score=best.score,
+        musician_indices=best.musician_indices,
+        shot_type=best.shot_type,
+        description=best.description,
+    )
 
 
 def apply_zoom(frame_bgr: np.ndarray, crop_box) -> np.ndarray:
