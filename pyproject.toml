@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-posedet-demo = "run_demo:main"
+posedet-director = "shot_director_video:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

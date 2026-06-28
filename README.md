@@ -2,7 +2,7 @@
 
 Top-down human **pose & action detection** for jazz-concert images and video, built on
 HuggingFace `transformers` (ViTPose). This document explains the pipeline and shows how
-to run it on **photos** and **videos**.
+to run it on **video** (one CLI) and on **single images** (via the library).
 
 > Domain note: ViTPose is **top-down** and has **no detector**. Poses are only ever
 > estimated *inside* person boxes produced by a separate detector. The pipeline is
@@ -86,60 +86,62 @@ first run and are cached locally.
 
 ---
 
-## 3. Running on a photo
+## 3. Running on a single image
 
-Use `run_demo.py`:
+There is no standalone photo CLI — the project ships **one script**, and it targets
+video. For a single still, call the library directly (full example in
+[Section 5](#5-using-posedet-as-a-library)):
 
-```bash
-python run_demo.py --image input/jazz.jpg --out out.jpg
-```
+```python
+from PIL import Image
+from posedet import Config, PosePipeline, draw_pose
+import numpy as np, cv2
 
-It detects people, estimates poses, draws skeletons + boxes, and writes `out.jpg`. It
-prints how many people were found.
-
-Useful flags:
-
-| Flag           | Meaning                                            | Default          |
-|----------------|----------------------------------------------------|------------------|
-| `--image`      | Input image path (mutually exclusive with `--video`) | —              |
-| `--out`        | Output image path                                  | required         |
-| `--kpt-thr`    | Keypoint score threshold (lower = draw more)       | `0.3`            |
-| `--pose-model` | ViTPose checkpoint                                 | `vitpose-base`   |
+image = Image.open("input/jazz.jpg").convert("RGB")
+poses = PosePipeline(Config())(image)            # list[PersonPose]
+bgr = np.array(image)[:, :, ::-1].copy()
+cv2.imwrite("out.jpg", draw_pose(bgr, poses))    # skeletons + boxes
 
 ---
 
 ## 4. Running on a video
 
-Three entry points: `run_demo.py` (simplest), `pose_overlay_video.py` (the tunable
-skeleton CLI), and `shot_director_video.py` (automatic shot framing).
+There is a **single CLI**, `shot_director_video.py` — a thin wrapper over
+`ShotDirector`. It runs the whole pipeline (person detection → pose skeletons →
+instrument detection → musician labeling → shot scoring) and writes one of two outputs:
 
-### 4a. `run_demo.py`: simplest video path
+- **overlay** (default): the frame annotated with pose skeletons, optional person boxes
+  (`--draw-boxes`), instrument boxes, role/posture labels, and the chosen shot rectangle.
+- **zoom** (`--zoom`): the chosen shot cropped and scaled back to full resolution, as an
+  automatic-camera cut.
+
+A `--preset` supplies sensible defaults for the pose stage; any explicit
+model/striding/smoothing flag overrides it (see [Section 4c](#4c-performance-presets)).
+
+### 4a. Overlay (skeletons + boxes + instruments + musicians + shot)
+
+Minimal run (skeletons, instruments, labels and the shot rectangle):
 
 ```bash
-python run_demo.py --video input/concert.mp4 --out out.mp4 --stride 5
+python shot_director_video.py --input input/concert.mov --output out.mp4
 ```
 
-`--stride N` processes every Nth frame (downsampling for slow CPU runs). Good for a quick look, no smoothing or performer selection.
-
-### 4b. `pose_overlay_video.py`: the concert CLI (recommended for video)
-
-A thin CLI over `VideoPoseRunner` with all the tuning knobs. Minimal run:
+Add the person bounding boxes to the overlay:
 
 ```bash
-python pose_overlay_video.py --input input/concert.mov --output out.mp4
+python shot_director_video.py --input input/concert.mov --output out.mp4 --draw-boxes
 ```
 
-Faster run with a **performance preset** (recommended for video - see
-[Section 4c](#4c-performance-presets)):
+Faster run with a **performance preset** (recommended for long clips):
 
 ```bash
-python pose_overlay_video.py --input input/concert.mov --output out.mp4 --preset balanced
+python shot_director_video.py --input input/concert.mov --output out.mp4 --preset fast
 ```
 
-Tuned run (preset + cap people, smooth boxes, restrict to a stage region):
+Tuned run (cap people, smooth boxes, restrict to a stage region):
 
 ```bash
-python pose_overlay_video.py \
+python shot_director_video.py \
     --input input/concert.mov --output out.mp4 \
     --preset fast \
     --max-people 8 \
@@ -147,65 +149,35 @@ python pose_overlay_video.py \
     --stage-roi 0.0,0.1,1.0,0.9
 ```
 
+Override the preset's models / striding — e.g. a **D-FINE** detector and a sharper pose
+pass:
+
+```bash
+python shot_director_video.py --input in.mov --output out.mp4 \
+    --detector-model ustc-community/dfine-small-coco \
+    --pose-stride 2 --detector-stride 2 --inference-width 1280
+```
+
 Quick debug run (first 10 frames only):
 
 ```bash
-python pose_overlay_video.py --input input/concert.mov --output out.mp4 --limit-frames 10
+python shot_director_video.py --input input/concert.mov --output out.mp4 --limit-frames 10
 ```
 
-Use a **D-FINE** detector instead of the default RT-DETR:
+### 4b. Zoom (automatic-camera cut)
+
+With `--zoom` the script outputs the chosen shot as a crop zoomed back to full
+resolution instead of the annotated overlay:
 
 ```bash
-python pose_overlay_video.py --input in.mov --output out.mp4 \
-    --detector-model ustc-community/dfine-small-coco
+python shot_director_video.py --input in.mov --output zoom.mp4 --zoom \
+    --preset balanced --instrument-stride 30 --max-zoom 3.0 --shot-smoothing 0.85
 ```
 
-#### All CLI options
-
-**Input / output**
-
-| Flag         | Meaning                     | Default |
-|--------------|-----------------------------|---------|
-| `--input`    | Input video path            | `input/concertVideo.mov` |
-| `--output`   | Output annotated video path | `output/concertVideo_skeletons.mp4` |
-
-**Models / device**
-
-| Flag               | Meaning                                           | Default |
-|--------------------|---------------------------------------------------|---------|
-| `--detector-model` | HuggingFace object detector id (RT-DETR or D-FINE) | RT-DETR |
-| `--pose-model`     | ViTPose checkpoint                                | `vitpose-base` |
-| `--device`         | `cpu`, `cuda`, or `` to auto-detect               | auto    |
-
-**Detection & performer selection**
-
-| Flag                     | Meaning                                                          | Default |
-|--------------------------|------------------------------------------------------------------|---------|
-| `--person-threshold`     | Min person-detection score                                       | `0.35`  |
-| `--max-people`           | Cap likely performers per frame; `0` = no cap                    | `8`     |
-| `--stage-roi`            | `x1,y1,x2,y2` in 0..1 fractions; drop people centered outside    | off     |
-| `--audience-suppression` | Score penalty for people low in the frame (foreground crowd)     | `0.35`  |
-| `--audience-band`        | Frame-height fraction below which feet mark foreground audience  | `0.80`  |
-| `--dedupe-iou`           | Drop boxes overlapping a higher-ranked one at this IoU; `0` = off| `0.45`  |
-
-**Video / performance** (trade accuracy for speed on long clips)
-
-| Flag                | Meaning                                                      | Default |
-|---------------------|--------------------------------------------------------------|---------|
-| `--inference-width` | Resize width for inference, scale skeletons back; `0` = full | `0`     |
-| `--pose-stride`     | Run pose estimation every N frames                           | `1`     |
-| `--detector-stride` | Run detection every N frames                                 | `1`     |
-| `--box-smoothing`   | Temporal box smoothing in 0..0.95                            | `0.0`   |
-
-**Drawing & debug**
-
-| Flag                               | Meaning                              | Default |
-|------------------------------------|--------------------------------------|---------|
-| `--keypoint-threshold`             | Min keypoint score to draw           | `0.3`   |
-| `--draw-boxes` / `--no-draw-boxes` | Draw person bounding boxes           | on      |
-| `--limit-frames`                   | Process at most N frames (`0` = all) | `0`     |
-
-> Telling on-stage musicians apart from the audience is done geometrically with `--stage-roi`, `--audience-suppression`, `--dedupe-iou`, and `--max-people`. The defaults are conservative for real concert footage, but a stable venue should still get a tuned `--stage-roi`.
+> Instrument detection uses **OWLv2** (open-vocabulary, Apache-licensed — no YOLO), so
+> any instrument is found by name. It is heavy on CPU, so it runs on a stride; raise
+> `--instrument-stride` on long clips. The chosen shot **keeps the camera's aspect
+> ratio** and never distorts the image.
 
 ### 4c. Performance presets
 
@@ -214,7 +186,7 @@ points on the speed/accuracy curve. Explicit flags override any preset field.
 
 | Preset      | Detector | Pose model | Striding | Quantize | Use it for |
 |-------------|----------|------------|----------|----------|------------|
-| `accurate`  | RT-DETR-r50 | vitpose-base | 1/1 | no | Quality reference, real-time on the deployment **GPU**. The default. |
+| `accurate`  | RT-DETR-r50 | vitpose-base | 1/1 | no | Quality reference, real-time on the deployment **GPU**. |
 | `balanced`  | RT-DETR-r18 | vitpose-plus-small | 2/2 | no | **Recommended.** Best CPU speed/quality trade-off. |
 | `fast`      | RT-DETR-r18 | vitpose-plus-small | 3/3 | int8 | Max CPU throughput, skeleton may jitter / drop joints. |
 
@@ -228,54 +200,79 @@ points on the speed/accuracy curve. Explicit flags override any preset field.
 python benchmark.py --input input/your_clip.mov --preset all --frames 8 --max-people 8
 ```
 
-### 4e. `shot_director_video.py`: automatic shot framing
+### 4e. All CLI options
 
-Detects musicians, labels them by instrument, scores the best shot, and writes either
-an **overlay** (skeletons + instrument boxes + role/posture labels + the chosen shot
-rectangle) or, with `--zoom`, the **zoom** into that shot at full resolution.
+**Input / output**
 
-```bash
-python shot_director_video.py --input input/concert.mov --output out.mp4
-```
+| Flag                   | Meaning                       | Default |
+|------------------------|-------------------------------|---------|
+| `--input` / `--output` | Input video / output video    | `input/concertVideo.mov` / `output/concertVideo_director.mp4` |
 
-Output the zoomed crop instead of the overlay, tuned:
+**Models / device** (override the `--preset`)
 
-```bash
-python shot_director_video.py --input in.mov --output zoom.mp4 --zoom \
-    --preset balanced --instrument-stride 30 --max-zoom 3.0 --shot-smoothing 0.85
-```
+| Flag                           | Meaning                                            | Default |
+|--------------------------------|----------------------------------------------------|---------|
+| `--preset`                     | Pose-stage speed/accuracy preset                   | `balanced` |
+| `--detector-model`             | HuggingFace object detector id (RT-DETR or D-FINE) | from preset |
+| `--pose-model`                 | ViTPose checkpoint                                 | from preset |
+| `--device`                     | `cpu`, `cuda`, or `` to auto-detect                | auto    |
+| `--quantize` / `--no-quantize` | Int8-quantize models on CPU (~1.5-2×, some loss)   | from preset |
 
-> Instrument detection uses **OWLv2** (open-vocabulary, Apache-licensed — no YOLO), so
-> any instrument is found by name. It is heavy on CPU, so it runs on a stride; raise
-> `--instrument-stride` on long clips. The pose stage still honors `--preset`.
+**Video / performance** (trade accuracy for speed on long clips)
 
-#### Options
+| Flag                | Meaning                                                     | Default |
+|---------------------|-------------------------------------------------------------|---------|
+| `--inference-width` | Resize width for inference, scale results back; `0` = full  | from preset |
+| `--pose-stride`     | Run pose estimation every N frames                          | from preset |
+| `--detector-stride` | Run person detection every N frames                         | from preset |
+| `--box-smoothing`   | Temporal person-box smoothing in 0..0.95                    | from preset |
 
-| Flag                      | Meaning                                                       | Default |
-|---------------------------|---------------------------------------------------------------|---------|
-| `--input` / `--output`    | Input video / output video path                               | `input/concertVideo.mov` / `output/concertVideo_director.mp4` |
-| `--preset`                | Pose-stage speed/accuracy preset                              | `balanced` |
-| `--device`                | `cpu`, `cuda`, or `` to auto-detect                           | auto    |
-| `--instrument-stride`     | Run OWLv2 instrument detection every N frames                 | `15`    |
-| `--instrument-threshold`  | Min confidence to keep an instrument detection                | `0.18`  |
-| `--max-instruments`       | Max instrument boxes to keep per detection pass               | `12`    |
-| `--instrument-min-area`   | Drop tiny instrument boxes by frame-area fraction             | `0.0004`|
-| `--instrument-max-area`   | Drop huge instrument boxes by frame-area fraction             | `0.25`  |
-| `--instrument-max-aspect` | Drop very skinny/wide instrument boxes                        | `8.0`   |
-| `--include-microphones`   | Also prompt for microphones; off by default to avoid mic stands| off     |
-| `--person-threshold`      | Min person-detection score                                   | `0.35`  |
-| `--max-people`            | Cap likely performers per frame                              | `8`     |
-| `--stage-roi`             | `x1,y1,x2,y2` in 0..1 fractions; drop people centered outside | off     |
-| `--audience-suppression`  | Score penalty for people low in the frame                    | `0.35`  |
-| `--audience-band`         | Frame-height fraction below which feet mark foreground crowd  | `0.80`  |
-| `--dedupe-iou`            | Drop overlapping person boxes at this IoU                    | `0.45`  |
-| `--shot-smoothing`        | EMA crop smoothing in 0..0.95 (higher = steadier camera)      | `0.8`   |
-| `--margin`                | Padding around framed subjects, as a fraction of their size   | `0.15`  |
-| `--max-zoom`              | Max zoom-in; the crop is never smaller than frame/max-zoom    | `2.5`   |
-| `--group-ratio`           | Frame peers with salience >= this fraction of the top one's   | `0.8`   |
-| `--min-association`       | Min geometric score to tie an instrument to a musician        | `0.1`   |
-| `--zoom` / `--no-zoom`    | Output the zoomed crop vs. the annotated overlay              | overlay |
-| `--limit-frames`          | Process at most N frames (`0` = all)                          | `0`     |
+**Detection & performer selection**
+
+| Flag                     | Meaning                                                       | Default |
+|--------------------------|---------------------------------------------------------------|---------|
+| `--person-threshold`     | Min person-detection score                                    | `0.35`  |
+| `--max-people`           | Cap likely performers per frame; `0` = no cap                 | `8`     |
+| `--stage-roi`            | `x1,y1,x2,y2` in 0..1 fractions; drop people centered outside  | off     |
+| `--audience-suppression` | Score penalty for people low in the frame                     | `0.35`  |
+| `--audience-band`        | Frame-height fraction below which feet mark foreground crowd   | `0.80`  |
+| `--dedupe-iou`           | Drop overlapping person boxes at this IoU; `0` = off           | `0.45`  |
+
+**Instrument detection (OWLv2)**
+
+| Flag                      | Meaning                                                        | Default |
+|---------------------------|----------------------------------------------------------------|---------|
+| `--instrument-stride`     | Run OWLv2 instrument detection every N frames                  | `15`    |
+| `--instrument-threshold`  | Min confidence to keep an instrument detection                 | `0.18`  |
+| `--max-instruments`       | Max instrument boxes per detection pass; `0` = no cap          | `12`    |
+| `--instrument-min-area`   | Drop tiny instrument boxes by frame-area fraction              | `0.0004`|
+| `--instrument-max-area`   | Drop huge instrument boxes by frame-area fraction              | `0.25`  |
+| `--instrument-max-aspect` | Drop very skinny/wide instrument boxes                         | `8.0`   |
+| `--include-microphones`   | Also prompt for microphones; off avoids mic-stand over-detect  | off     |
+
+**Shot framing**
+
+| Flag                | Meaning                                                       | Default |
+|---------------------|---------------------------------------------------------------|---------|
+| `--shot-smoothing`  | EMA crop smoothing in 0..0.95 (higher = steadier camera)      | `0.8`   |
+| `--margin`          | Padding around framed subjects, as a fraction of their size   | `0.15`  |
+| `--max-zoom`        | Max zoom-in; the crop is never smaller than frame/max-zoom    | `2.5`   |
+| `--group-ratio`     | Frame peers with salience >= this fraction of the top one's   | `0.8`   |
+| `--min-association` | Min geometric score to tie an instrument to a musician        | `0.1`   |
+
+**Output & drawing**
+
+| Flag                               | Meaning                                            | Default |
+|------------------------------------|----------------------------------------------------|---------|
+| `--zoom` / `--no-zoom`             | Output the zoomed crop vs. the annotated overlay   | overlay |
+| `--draw-boxes` / `--no-draw-boxes` | Draw person bounding boxes in overlay mode         | off     |
+| `--keypoint-threshold`             | Min keypoint score to draw / label                 | `0.3`   |
+| `--limit-frames`                   | Process at most N frames (`0` = all)               | `0`     |
+
+> Telling on-stage musicians apart from the audience is done geometrically with
+> `--stage-roi`, `--audience-suppression`, `--dedupe-iou`, and `--max-people`. The
+> defaults are conservative for real concert footage, but a stable venue should still
+> get a tuned `--stage-roi`.
 
 > Instruments are detected by text prompt; the default jazz set lives in
 > `posedet.config.DEFAULT_INSTRUMENT_PROMPTS`. Add or remove instruments through

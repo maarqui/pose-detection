@@ -1,19 +1,33 @@
-"""Render a concert video as an automatic-camera cut: detect musicians, label them by
-instrument, score the best shot, and either overlay the chosen crop or output it as a
-zoom.
+"""The concert-video CLI: detect people, draw pose skeletons and person boxes, label
+musicians by instrument, score the best shot, and either overlay everything or output
+the chosen crop as a zoom.
+
+This is the single entry point for the pipeline. In its default **overlay** mode it
+draws the full annotation stack — skeletons, person bounding boxes (``--draw-boxes``),
+instrument boxes, musician labels, and the chosen shot rectangle. In **zoom** mode
+(``--zoom``) it instead emits the framed crop as an automatic-camera cut. Every stage
+is configurable from the flags below.
 
 Thin CLI over the ``posedet`` package: it parses arguments, builds a ``Config`` and a
 ``ShotDirector`` (which wraps the pose runner + OWLv2 instrument detector + framing),
 then reads frames and writes the result. No model, framing, or labeling logic lives
 here — it all sits behind ``posedet`` so the deployment team can lift it out.
 
-Instrument detection uses OWLv2 (open-vocabulary, Apache-licensed) — there is no YOLO
-path. OWLv2 is heavy on CPU, so it runs on a stride (``--instrument-stride``).
+Person detection uses a ``transformers`` detector (RT-DETR by default; pass a D-FINE id
+to ``--detector-model``). Instrument detection uses OWLv2 (open-vocabulary, Apache-
+licensed) — there is no YOLO path. OWLv2 is heavy on CPU, so it runs on a stride
+(``--instrument-stride``). A ``--preset`` supplies sensible defaults; any explicit
+model/striding/smoothing flag overrides it.
 
 Examples:
-    python shot_director_video.py --input input/concert.mov --output out.mp4
+    # Full overlay (skeletons + boxes + instruments + labels + shot)
+    python shot_director_video.py --input in.mov --output out.mp4 --draw-boxes
+    # Automatic-camera zoom cut
     python shot_director_video.py --input in.mov --output zoom.mp4 --zoom \\
         --preset balanced --instrument-stride 30 --max-zoom 3.0 --shot-smoothing 0.85
+    # Override the preset's models / striding for a sharper skeleton pass
+    python shot_director_video.py --input in.mov --output out.mp4 \\
+        --pose-stride 2 --detector-stride 2 --inference-width 1280
 """
 
 from __future__ import annotations
@@ -55,9 +69,55 @@ def parse_args() -> argparse.Namespace:
         "--preset",
         choices=tuple(PRESETS),
         default="balanced",
-        help="Speed/accuracy preset for the pose stage (models, striding, smoothing).",
+        help="Speed/accuracy preset for the pose stage (models, striding, smoothing). "
+        "Explicit model/striding/smoothing flags below override it.",
     )
     parser.add_argument("--device", default="", help="'cpu', 'cuda', or '' to auto.")
+    parser.add_argument(
+        "--detector-model",
+        default=None,
+        help="HuggingFace object detector id. Overrides the preset.",
+    )
+    parser.add_argument(
+        "--pose-model",
+        default=None,
+        help="HuggingFace ViTPose checkpoint. Overrides the preset.",
+    )
+    parser.add_argument(
+        "--inference-width",
+        type=int,
+        default=None,
+        help="Resize frames to this width for inference, then scale results back. "
+        "0 keeps full resolution. Overrides the preset.",
+    )
+    parser.add_argument(
+        "--pose-stride",
+        type=int,
+        default=None,
+        help="Run pose estimation every N frames; reuse skeletons in between. "
+        "Overrides the preset.",
+    )
+    parser.add_argument(
+        "--detector-stride",
+        type=int,
+        default=None,
+        help="Run person detection every N frames; reuse boxes in between. "
+        "Overrides the preset.",
+    )
+    parser.add_argument(
+        "--box-smoothing",
+        type=float,
+        default=None,
+        help="Temporal person-box smoothing in 0..0.95. Higher is steadier but "
+        "laggier. Overrides the preset.",
+    )
+    parser.add_argument(
+        "--quantize",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Int8-quantize models on CPU (~1.5-2x, some accuracy loss). "
+        "Overrides the preset.",
+    )
     parser.add_argument(
         "--instrument-stride",
         type=int,
@@ -180,6 +240,13 @@ def parse_args() -> argparse.Namespace:
         help="Output the zoomed crop instead of an overlay of the chosen shot.",
     )
     parser.add_argument(
+        "--draw-boxes",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Draw person bounding boxes in overlay mode (off by default to keep the "
+        "overlay readable; ignored in --zoom mode).",
+    )
+    parser.add_argument(
         "--limit-frames",
         type=int,
         default=0,
@@ -224,7 +291,7 @@ def render(frame_bgr, director_frame, args):
         frame_bgr,
         [m.pose for m in director_frame.musicians],
         kpt_threshold=args.keypoint_threshold,
-        draw_boxes=False,
+        draw_boxes=args.draw_boxes,
         skeleton_color=(60, 255, 60),
         point_colors=KEYPOINT_COLORS,
         line_thickness=3,
@@ -244,13 +311,18 @@ def main() -> None:
     if args.limit_frames < 0:
         raise ValueError("--limit-frames must be >= 0")
 
+    # A preset supplies the defaults; any explicit flag (non-None) overrides it.
     preset = PRESETS[args.preset]
+
+    def pick(value, fallback):
+        return fallback if value is None else value
+
     instrument_prompts = DEFAULT_INSTRUMENT_PROMPTS
     if args.include_microphones:
         instrument_prompts = (*instrument_prompts, "microphone")
     config = Config(
-        detector_model=preset.detector_model,
-        pose_model=preset.pose_model,
+        detector_model=pick(args.detector_model, preset.detector_model),
+        pose_model=pick(args.pose_model, preset.pose_model),
         device=args.device,
         det_threshold=args.person_threshold,
         kpt_threshold=args.keypoint_threshold,
@@ -265,14 +337,14 @@ def main() -> None:
         instrument_min_area_fraction=args.instrument_min_area,
         instrument_max_area_fraction=args.instrument_max_area,
         instrument_max_aspect_ratio=args.instrument_max_aspect,
-        quantize=preset.quantize,
+        quantize=pick(args.quantize, preset.quantize),
     )
     runner = VideoPoseRunner(
         config,
-        detector_stride=preset.detector_stride,
-        pose_stride=preset.pose_stride,
-        box_smoothing=preset.box_smoothing,
-        inference_width=preset.inference_width,
+        detector_stride=pick(args.detector_stride, preset.detector_stride),
+        pose_stride=pick(args.pose_stride, preset.pose_stride),
+        box_smoothing=pick(args.box_smoothing, preset.box_smoothing),
+        inference_width=pick(args.inference_width, preset.inference_width),
     )
     director = ShotDirector(
         config,
@@ -285,7 +357,9 @@ def main() -> None:
         min_association=args.min_association,
     )
     print(f"Preset: {preset.name}  (quantize={config.quantize})")
-    print(f"Instrument model: {config.instrument_model} on {config.device}")
+    print(f"Detector: {config.detector_model}")
+    print(f"Pose model: {config.pose_model} on {config.device}")
+    print(f"Instrument model: {config.instrument_model}")
     print(f"Mode: {'zoom' if args.zoom else 'overlay'}")
 
     capture = cv2.VideoCapture(str(args.input))
