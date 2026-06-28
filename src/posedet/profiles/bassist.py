@@ -1,13 +1,14 @@
 from .utils import (
-    hands_box,
-    upper_body_box,
-    chest_up_box,
-    head_only_box,
-    full_body_box,
-    instrument_union,
+    ShotCandidate,
     candidate,
-    ShotCandidate
+    chest_up_box,
+    full_body_box,
+    hands_box,
+    head_only_box,
+    instrument_union,
+    upper_body_box,
 )
+
 
 def bassist_shots(
     musician,
@@ -67,7 +68,7 @@ def bassist_shots(
             "close_up",
             "bassist headshot",
             margin=0.25,
-            max_zoom=3.5
+            max_zoom=3.5,
         )
     )
 

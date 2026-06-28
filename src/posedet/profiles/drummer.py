@@ -1,14 +1,15 @@
 from .utils import (
-    hands_box,
-    upper_body_box,
-    chest_up_box,
-    head_only_box,
-    full_body_box,
-    relative_box,
-    instrument_box,
+    ShotCandidate,
     candidate,
-    ShotCandidate
+    chest_up_box,
+    full_body_box,
+    hands_box,
+    head_only_box,
+    instrument_box,
+    relative_box,
+    upper_body_box,
 )
+
 
 def drummer_shots(
     musician,
@@ -85,7 +86,7 @@ def drummer_shots(
             "close_up",
             "drummer headshot",
             margin=0.25,
-            max_zoom=3.5
+            max_zoom=3.5,
         )
     )
 

@@ -1,14 +1,14 @@
 from .utils import (
-    head_box,
-    hands_box,
-    upper_body_box,
-    chest_up_box,
-    head_only_box,
-    relative_box,
-    instrument_union,
+    ShotCandidate,
     candidate,
-    ShotCandidate
+    chest_up_box,
+    hands_box,
+    head_box,
+    head_only_box,
+    instrument_union,
+    upper_body_box,
 )
+
 
 def horn_shots(
     musician,
@@ -17,7 +17,7 @@ def horn_shots(
     salience: float,
     solo_bonus: float,
     kpt_threshold: float,
-    role: str
+    role: str,
 ) -> list[ShotCandidate]:
     candidates = []
 
@@ -73,7 +73,7 @@ def horn_shots(
             "close_up",
             f"{role} headshot",
             margin=0.25,
-            max_zoom=3.5
+            max_zoom=3.5,
         )
     )
 
